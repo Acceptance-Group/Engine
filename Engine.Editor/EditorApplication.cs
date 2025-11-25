@@ -63,6 +63,7 @@ public class EditorApplication : IDisposable
         _window.RenderFrame += OnRenderFrame;
         _window.Resize += OnResize;
         _window.Closing += (e) => OnClosing();
+        _window.TextInput += OnTextInput;
 
         _projectManager = new ProjectManager();
         _console = new ConsoleWindow();
@@ -542,29 +543,54 @@ void main()
 
         CreateGround();
 
-        var cube = _currentScene.CreateGameObject("Cube");
-        var meshRenderer = cube.AddComponent<MeshRenderer>();
-        meshRenderer.Mesh = Primitives.CreateCube();
-        meshRenderer.SetDefaultShader(_defaultShader!);
-        cube.Transform.Position = new Engine.Math.Vector3(-2, 2, 0);
-        cube.AddComponent<MeshCollider>();
-        
-        var cubePhysics = cube.AddComponent<PhysicsComponent>();
-        cubePhysics.Mass = 1.0f;
-        cubePhysics.IsKinematic = false;
-        cubePhysics.ColliderShape = new BoxColliderShape(new Engine.Math.Vector3(1.0f, 1.0f, 1.0f));
+        for (int i = 0; i < 4; i++)
+        {
+            var cube = _currentScene.CreateGameObject($"Cube {i + 1}");
+            var meshRenderer = cube.AddComponent<MeshRenderer>();
+            meshRenderer.Mesh = Primitives.CreateCube();
+            meshRenderer.SetDefaultShader(_defaultShader!);
+            cube.Transform.Position = new Engine.Math.Vector3(-3 + i * 2, 0.5f + i * 1.1f, 0);
+            
+            var cubePhysics = cube.AddComponent<Rigidbody>();
+            cubePhysics.Mass = 1.0f;
+            cubePhysics.IsKinematic = false;
+            
+            var cubeCollider = cube.AddComponent<BoxCollider>();
+            cubeCollider.Size = new Engine.Math.Vector3(1.0f, 1.0f, 1.0f);
+        }
 
-        var sphere = _currentScene.CreateGameObject("Sphere");
-        var sphereRenderer = sphere.AddComponent<MeshRenderer>();
-        sphereRenderer.Mesh = Primitives.CreateSphere();
-        sphereRenderer.SetDefaultShader(_defaultShader!);
-        sphere.Transform.Position = new Engine.Math.Vector3(2, 2, 0);
-        sphere.AddComponent<MeshCollider>();
-        
-        var spherePhysics = sphere.AddComponent<PhysicsComponent>();
-        spherePhysics.Mass = 1.0f;
-        spherePhysics.IsKinematic = false;
-        spherePhysics.ColliderShape = new SphereColliderShape(0.5f);
+        for (int i = 0; i < 6; i++)
+        {
+            var sphere = _currentScene.CreateGameObject($"Sphere {i + 1}");
+            var sphereRenderer = sphere.AddComponent<MeshRenderer>();
+            sphereRenderer.Mesh = Primitives.CreateSphere();
+            sphereRenderer.SetDefaultShader(_defaultShader!);
+            sphere.Transform.Position = new Engine.Math.Vector3(-4 + i * 1.5f, 5 + i * 0.5f, -2 + i * 0.3f);
+            
+            var spherePhysics = sphere.AddComponent<Rigidbody>();
+            spherePhysics.Mass = 0.5f + i * 0.2f;
+            spherePhysics.IsKinematic = false;
+            
+            var sphereCollider = sphere.AddComponent<SphereCollider>();
+            sphereCollider.Radius = 0.5f;
+        }
+
+        for (int i = 0; i < 3; i++)
+        {
+            var heavyCube = _currentScene.CreateGameObject($"Heavy Cube {i + 1}");
+            var meshRenderer = heavyCube.AddComponent<MeshRenderer>();
+            meshRenderer.Mesh = Primitives.CreateCube();
+            meshRenderer.SetDefaultShader(_defaultShader!);
+            heavyCube.Transform.Position = new Engine.Math.Vector3(4, 2 + i * 1.2f, -1);
+            heavyCube.Transform.Scale = new Engine.Math.Vector3(1.2f, 1.2f, 1.2f);
+            
+            var heavyPhysics = heavyCube.AddComponent<Rigidbody>();
+            heavyPhysics.Mass = 5.0f;
+            heavyPhysics.IsKinematic = false;
+            
+            var heavyCollider = heavyCube.AddComponent<BoxCollider>();
+            heavyCollider.Size = new Engine.Math.Vector3(1.2f, 1.2f, 1.2f);
+        }
     }
 
     private void CreateGround()
@@ -580,11 +606,12 @@ void main()
         groundRenderer.Mesh = Primitives.CreateCube();
         groundRenderer.SetDefaultShader(_defaultShader!);
 
-        ground.AddComponent<MeshCollider>();
-
-        var groundPhysics = ground.AddComponent<PhysicsComponent>();
+        var groundPhysics = ground.AddComponent<Rigidbody>();
         groundPhysics.IsKinematic = true;
         groundPhysics.Mass = 0;
+        
+        var groundCollider = ground.AddComponent<BoxCollider>();
+        groundCollider.Size = new Engine.Math.Vector3(20, 1, 20);
     }
 
     private void OnUpdateFrame(FrameEventArgs e)
@@ -859,6 +886,14 @@ void main()
         _isRunning = false;
     }
 
+    private void OnTextInput(TextInputEventArgs e)
+    {
+        if (e.Unicode > 0 && e.Unicode < 0x10000)
+        {
+            _imguiController?.PressChar((char)e.Unicode);
+        }
+    }
+
     public void Run()
     {
         _window?.Run();
@@ -962,7 +997,7 @@ void main()
 
         foreach (var gameObject in _currentScene.GameObjects)
         {
-            var physics = gameObject.GetComponent<PhysicsComponent>();
+            var physics = gameObject.GetComponent<Rigidbody>();
             if (physics != null)
             {
                 _originalTransforms[gameObject] = (gameObject.Transform.Position, gameObject.Transform.Rotation);
@@ -983,7 +1018,7 @@ void main()
             gameObject.Transform.Position = originalPosition;
             gameObject.Transform.Rotation = originalRotation;
 
-            var physics = gameObject.GetComponent<PhysicsComponent>();
+            var physics = gameObject.GetComponent<Rigidbody>();
             if (physics?.Body != null)
             {
                 physics.Body.ResetToOriginal();
@@ -999,7 +1034,7 @@ void main()
         if (_currentScene == null)
             return;
 
-        var physicsComponents = _currentScene.FindObjectsOfType<PhysicsComponent>();
+        var physicsComponents = _currentScene.FindObjectsOfType<Rigidbody>();
         foreach (var component in physicsComponents)
         {
             component.GameObject?.GetComponent<MeshCollider>()?.RefreshSize(force: true);
@@ -1014,7 +1049,7 @@ void main()
             
         foreach (var gameObject in _currentScene.GameObjects)
         {
-            var physics = gameObject.GetComponent<PhysicsComponent>();
+            var physics = gameObject.GetComponent<Rigidbody>();
             if (physics?.Body != null)
             {
                 if (gameObject.Name == "Cube")

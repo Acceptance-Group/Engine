@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using ImGuiNET;
 using Engine.Core;
 using Engine.Graphics;
@@ -10,17 +12,75 @@ namespace Engine.Editor;
 public class InspectorWindow
 {
     private readonly EditorApplication _editor;
+    private System.Numerics.Vector3? _lastEulerAngles;
+    private string _componentSearchText = "";
+    private readonly byte[] _componentSearchBuffer = new byte[256];
+
+    private class ComponentInfo
+    {
+        public required string Name { get; set; }
+        public required string Category { get; set; }
+        public required Action<GameObject> AddAction { get; set; }
+        public required Func<GameObject, bool> CanAdd { get; set; }
+    }
+
+    private readonly List<ComponentInfo> _availableComponents = new List<ComponentInfo>
+    {
+        new ComponentInfo
+        {
+            Name = "Box Collider",
+            Category = "Colliders",
+            AddAction = (go) => go.AddComponent<BoxCollider>(),
+            CanAdd = (go) => true
+        },
+        new ComponentInfo
+        {
+            Name = "Mesh Collider",
+            Category = "Colliders",
+            AddAction = (go) => go.AddComponent<MeshCollider>(),
+            CanAdd = (go) => go.GetComponent<MeshCollider>() == null
+        },
+        new ComponentInfo
+        {
+            Name = "Sphere Collider",
+            Category = "Colliders",
+            AddAction = (go) => go.AddComponent<SphereCollider>(),
+            CanAdd = (go) => true
+        },
+        new ComponentInfo
+        {
+            Name = "Mesh Renderer",
+            Category = "Graphics",
+            AddAction = (go) => go.AddComponent<MeshRenderer>(),
+            CanAdd = (go) => true
+        },
+        new ComponentInfo
+        {
+            Name = "Rigidbody",
+            Category = "Physics",
+            AddAction = (go) => go.AddComponent<Rigidbody>(),
+            CanAdd = (go) => true
+        }
+    };
 
     public InspectorWindow(EditorApplication editor)
     {
         _editor = editor;
     }
 
+    private GameObject? _lastSelectedObject;
+
     public void Render()
     {
         if (ImGui.Begin("Inspector"))
         {
             var selected = _editor.SelectedObject;
+            if (selected != _lastSelectedObject)
+            {
+                _lastEulerAngles = null;
+                _lastSelectedObject = selected;
+            }
+            
             if (selected != null)
             {
                 RenderGameObject(selected);
@@ -70,29 +130,67 @@ public class InspectorWindow
 
         if (ImGui.Button("Add Component"))
         {
+            _componentSearchText = "";
+            Array.Clear(_componentSearchBuffer, 0, _componentSearchBuffer.Length);
             ImGui.OpenPopup("AddComponentPopup");
         }
 
         if (ImGui.BeginPopup("AddComponentPopup"))
         {
-            if (ImGui.MenuItem("Mesh Renderer"))
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.InputText("##Search", _componentSearchBuffer, 256))
             {
-                var renderer = gameObject.AddComponent<MeshRenderer>();
-                if (_editor.DefaultShader != null)
-                    renderer.SetDefaultShader(_editor.DefaultShader);
-            }
-            if (ImGui.MenuItem("Physics"))
-            {
-                gameObject.AddComponent<PhysicsComponent>();
+                int nullIndex = Array.IndexOf(_componentSearchBuffer, (byte)0);
+                if (nullIndex < 0) nullIndex = 256;
+                _componentSearchText = System.Text.Encoding.UTF8.GetString(_componentSearchBuffer, 0, nullIndex).ToLowerInvariant();
             }
 
-            bool hasMeshCollider = gameObject.GetComponent<MeshCollider>() != null;
-            ImGui.BeginDisabled(hasMeshCollider);
-            if (ImGui.MenuItem("Mesh Collider"))
+            ImGui.Separator();
+
+            var filtered = _availableComponents
+                .Where(c => string.IsNullOrEmpty(_componentSearchText) || 
+                           c.Name.ToLowerInvariant().Contains(_componentSearchText) ||
+                           c.Category.ToLowerInvariant().Contains(_componentSearchText))
+                .OrderBy(c => c.Category)
+                .ThenBy(c => c.Name)
+                .ToList();
+
+            string? currentCategory = null;
+            foreach (var component in filtered)
             {
-                gameObject.AddComponent<MeshCollider>();
+                if (currentCategory != component.Category)
+                {
+                    if (currentCategory != null)
+                    {
+                        ImGui.Separator();
+                    }
+                    currentCategory = component.Category;
+                    ImGui.TextDisabled(component.Category);
+                }
+
+                bool canAdd = component.CanAdd(gameObject);
+                ImGui.BeginDisabled(!canAdd);
+                
+                if (ImGui.MenuItem(component.Name))
+                {
+                    component.AddAction(gameObject);
+                    if (component.Name == "Mesh Renderer")
+                    {
+                        var renderer = gameObject.GetComponent<MeshRenderer>();
+                        if (renderer != null && _editor.DefaultShader != null)
+                        {
+                            renderer.SetDefaultShader(_editor.DefaultShader);
+                        }
+                    }
+                }
+                
+                ImGui.EndDisabled();
             }
-            ImGui.EndDisabled();
+
+            if (filtered.Count == 0)
+            {
+                ImGui.TextDisabled("No components found");
+            }
 
             ImGui.EndPopup();
         }
@@ -108,10 +206,55 @@ public class InspectorWindow
                 transform.Position = new Vector3(position.X, position.Y, position.Z);
             }
 
-            System.Numerics.Vector3 euler = new System.Numerics.Vector3(transform.EulerAngles.X, transform.EulerAngles.Y, transform.EulerAngles.Z);
+            if (!_lastEulerAngles.HasValue)
+            {
+                Vector3 currentEuler = transform.EulerAngles;
+                _lastEulerAngles = new System.Numerics.Vector3(
+                    currentEuler.X * 180.0f / MathF.PI,
+                    currentEuler.Y * 180.0f / MathF.PI,
+                    currentEuler.Z * 180.0f / MathF.PI
+                );
+            }
+            
+            System.Numerics.Vector3 euler = _lastEulerAngles.Value;
+            System.Numerics.Vector3 lastEuler = _lastEulerAngles.Value;
+            
             if (ImGui.DragFloat3("Rotation", ref euler, 1.0f))
             {
-                transform.EulerAngles = new Vector3(euler.X, euler.Y, euler.Z);
+                Quaternion currentRotation = transform.Rotation;
+                Vector3 right = transform.Right;
+                Vector3 up = transform.Up;
+                Vector3 forward = transform.Forward;
+                
+                System.Numerics.Vector3 newLastEuler = lastEuler;
+                
+                if (MathF.Abs(euler.X - lastEuler.X) > 0.001f)
+                {
+                    float deltaX = (euler.X - lastEuler.X) * MathF.PI / 180.0f;
+                    currentRotation = currentRotation * Quaternion.FromAxisAngle(right, deltaX);
+                    newLastEuler.X = euler.X;
+                }
+                
+                if (MathF.Abs(euler.Y - lastEuler.Y) > 0.001f)
+                {
+                    float deltaY = (euler.Y - lastEuler.Y) * MathF.PI / 180.0f;
+                    currentRotation = currentRotation * Quaternion.FromAxisAngle(up, deltaY);
+                    newLastEuler.Y = euler.Y;
+                }
+                
+                if (MathF.Abs(euler.Z - lastEuler.Z) > 0.001f)
+                {
+                    float deltaZ = (euler.Z - lastEuler.Z) * MathF.PI / 180.0f;
+                    currentRotation = currentRotation * Quaternion.FromAxisAngle(forward, deltaZ);
+                    newLastEuler.Z = euler.Z;
+                }
+                
+                transform.Rotation = currentRotation.Normalized();
+                _lastEulerAngles = newLastEuler;
+            }
+            else
+            {
+                _lastEulerAngles = euler;
             }
 
             System.Numerics.Vector3 scale = new System.Numerics.Vector3(transform.Scale.X, transform.Scale.Y, transform.Scale.Z);
@@ -139,9 +282,9 @@ public class InspectorWindow
             {
                 RenderMeshRenderer(renderer);
             }
-            else if (component is PhysicsComponent physics)
+            else if (component is Rigidbody rigidbody)
             {
-                RenderPhysicsComponent(physics);
+                RenderRigidbody(rigidbody);
             }
 
             if (ImGui.Button("Remove"))
@@ -157,18 +300,18 @@ public class InspectorWindow
         ImGui.Text($"Has Material: {renderer.Material != null}");
     }
 
-    private void RenderPhysicsComponent(PhysicsComponent physics)
+    private void RenderRigidbody(Rigidbody rigidbody)
     {
-        bool kinematic = physics.IsKinematic;
+        bool kinematic = rigidbody.IsKinematic;
         if (ImGui.Checkbox("Is Kinematic", ref kinematic))
         {
-            physics.IsKinematic = kinematic;
+            rigidbody.IsKinematic = kinematic;
         }
 
-        float mass = physics.Mass;
+        float mass = rigidbody.Mass;
         if (ImGui.DragFloat("Mass", ref mass, 0.1f, 0.0f, 1000.0f))
         {
-            physics.Mass = mass;
+            rigidbody.Mass = mass;
         }
     }
 }

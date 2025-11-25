@@ -41,7 +41,7 @@ public class MeshCollider : Component
         Size = newSize;
         _lastScale = newSize;
 
-        var physics = GameObject?.GetComponent<PhysicsComponent>();
+        var physics = GameObject?.GetComponent<Rigidbody>();
         physics?.UpdateColliderFromMesh(Size);
     }
 
@@ -49,7 +49,7 @@ public class MeshCollider : Component
     {
         base.OnDetached();
         var fallbackSize = GameObject?.Transform?.Scale ?? Engine.Math.Vector3.One;
-        GameObject?.GetComponent<PhysicsComponent>()?.UpdateColliderFromMesh(fallbackSize);
+        GameObject?.GetComponent<Rigidbody>()?.UpdateColliderFromMesh(fallbackSize);
     }
 }
 

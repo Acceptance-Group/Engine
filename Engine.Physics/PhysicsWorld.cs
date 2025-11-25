@@ -7,8 +7,8 @@ using BepuPhysics.CollisionDetection;
 using BepuPhysics.Constraints;
 using BepuUtilities;
 using BepuUtilities.Memory;
-using BepuPhysics.Trees;
 using Engine.Math;
+using Engine.Core;
 using EngineVector3 = Engine.Math.Vector3;
 using EngineQuaternion = Engine.Math.Quaternion;
 
@@ -17,26 +17,19 @@ namespace Engine.Physics;
 public class PhysicsWorld : IDisposable
 {
     private const float FixedTimeStep = 1f / 60f;
-    private const float MaxDeltaTime = 1f / 10f;
-    private const int MaxSubstepsPerFrame = 8;
+    private const float MaxDeltaTime = 0.1f;
 
     private readonly BufferPool _bufferPool = new();
-    private ThreadDispatcher? _threadDispatcher;
     private Simulation? _simulation;
     private float _timeAccumulator;
-    private System.Numerics.Vector3 _gravity = new(0, -9.81f, 0);
     private readonly HashSet<PhysicsBody> _registeredBodies = new();
-    private readonly Dictionary<PhysicsBody, BodyHandle> _dynamicBodyHandles = new();
+    private readonly Dictionary<PhysicsBody, BodyHandle> _bodyHandles = new();
     private readonly Dictionary<BodyHandle, PhysicsBody> _handleToBody = new();
-    private readonly Dictionary<PhysicsBody, StaticHandle> _staticBodyHandles = new();
+    private readonly Dictionary<PhysicsBody, StaticHandle> _staticHandles = new();
     private readonly Dictionary<StaticHandle, PhysicsBody> _staticHandleToBody = new();
+    private readonly Dictionary<PhysicsBody, TypedIndex> _bodyShapeIndices = new();
 
-    public EngineVector3 Gravity
-    {
-        get => new EngineVector3(_gravity.X, _gravity.Y, _gravity.Z);
-        set => _gravity = new System.Numerics.Vector3(value.X, value.Y, value.Z);
-    }
-
+    public EngineVector3 Gravity { get; set; } = new EngineVector3(0, -9.81f, 0);
     public bool IsSimulating { get; private set; }
 
     public void StartSimulation()
@@ -44,120 +37,440 @@ public class PhysicsWorld : IDisposable
         if (IsSimulating)
             return;
 
-        DestroySimulation();
+        StopSimulation();
 
-        if (_threadDispatcher == null)
-        {
-            var workerCount = System.Math.Max(1, Environment.ProcessorCount - 1);
-            _threadDispatcher = new ThreadDispatcher(workerCount, 65536);
-        }
-
+        var gravity = new System.Numerics.Vector3(Gravity.X, Gravity.Y, Gravity.Z);
         _simulation = Simulation.Create(
             _bufferPool,
-            new PhysicsNarrowPhaseCallbacks(),
-            new PhysicsPoseIntegratorCallbacks(_gravity),
+            new SimpleNarrowPhaseCallbacks(),
+            new SimplePoseIntegratorCallbacks(gravity),
             new SolveDescription(8, 1));
-        _timeAccumulator = 0f;
 
         foreach (var body in _registeredBodies)
         {
-            CreateRuntimeBody(body);
+            if (body.ColliderShape == null)
+            {
+                body.ColliderShape = new BoxColliderShape(EngineVector3.One);
+            }
+
+            var position = ToNumerics(body.Position);
+            var rotation = ToNumerics(body.Rotation);
+            
+            if (!ValidatePosition(position))
+            {
+                Logger.Warning($"Invalid position for body, resetting to zero");
+                body.Position = EngineVector3.Zero;
+                position = System.Numerics.Vector3.Zero;
+            }
+            
+            if (!ValidateQuaternion(rotation))
+            {
+                Logger.Warning($"Invalid rotation for body, resetting to identity");
+                body.Rotation = EngineQuaternion.Identity;
+                rotation = System.Numerics.Quaternion.Identity;
+            }
+
+            if (body.Mass <= 0)
+            {
+                AddStaticToSimulation(body);
+            }
+            else
+            {
+                var handle = AddBodyToSimulation(body);
+                if (handle.HasValue && body.IsKinematic)
+                {
+                    var reference = _simulation.Bodies.GetBodyReference(handle.Value);
+                    reference.LocalInertia = default;
+                    reference.BecomeKinematic();
+                }
+            }
         }
 
+        _timeAccumulator = 0f;
         IsSimulating = true;
     }
 
     public void StopSimulation()
     {
-        if (!IsSimulating)
+        if (!IsSimulating && _simulation == null)
             return;
 
         IsSimulating = false;
-        DestroySimulation();
+
+        if (_simulation != null)
+        {
+            var bodiesToRemove = new List<PhysicsBody>(_bodyHandles.Keys);
+            foreach (var body in bodiesToRemove)
+            {
+                if (_bodyHandles.TryGetValue(body, out var handle))
+                {
+                    try
+                    {
+                        _simulation.Bodies.Remove(handle);
+                    }
+                    catch { }
+                    _bodyHandles.Remove(body);
+                    _handleToBody.Remove(handle);
+                    body.DetachHandle();
+                }
+            }
+
+            var staticsToRemove = new List<PhysicsBody>(_staticHandles.Keys);
+            foreach (var body in staticsToRemove)
+            {
+                if (_staticHandles.TryGetValue(body, out var staticHandle))
+                {
+                    try
+                    {
+                        _simulation.Statics.Remove(staticHandle);
+                    }
+                    catch { }
+                    _staticHandles.Remove(body);
+                    _staticHandleToBody.Remove(staticHandle);
+                    body.DetachHandle();
+                }
+            }
+
+            try
+            {
+                _simulation.Dispose();
+            }
+            catch { }
+
+            _simulation = null;
+        }
+
+        _bodyHandles.Clear();
+        _handleToBody.Clear();
+        _staticHandles.Clear();
+        _staticHandleToBody.Clear();
+        _bodyShapeIndices.Clear();
         _timeAccumulator = 0f;
     }
 
     public void RegisterBody(PhysicsBody body)
     {
-        if (_registeredBodies.Add(body) && IsSimulating && _simulation != null)
+        if (!_registeredBodies.Add(body))
+            return;
+
+        if (IsSimulating && _simulation != null)
         {
-            CreateRuntimeBody(body);
+            if (body.Mass <= 0)
+            {
+                AddStaticToSimulation(body);
+            }
+            else
+            {
+                var handle = AddBodyToSimulation(body);
+                if (handle.HasValue && body.IsKinematic)
+                {
+                    var reference = _simulation.Bodies.GetBodyReference(handle.Value);
+                    reference.LocalInertia = default;
+                    reference.BecomeKinematic();
+                }
+            }
         }
     }
 
     public void UnregisterBody(PhysicsBody body)
     {
-        _registeredBodies.Remove(body);
-        if (IsSimulating)
+        if (!_registeredBodies.Remove(body))
+            return;
+
+        if (_bodyHandles.TryGetValue(body, out var handle))
         {
-            RemoveRuntimeBody(body);
+            if (_simulation != null)
+            {
+                try
+                {
+                    _simulation.Bodies.Remove(handle);
+                }
+                catch { }
+            }
+            _bodyHandles.Remove(body);
+            _handleToBody.Remove(handle);
+            _bodyShapeIndices.Remove(body);
+            body.DetachHandle();
+        }
+        else if (_staticHandles.TryGetValue(body, out var staticHandle))
+        {
+            if (_simulation != null)
+            {
+                try
+                {
+                    _simulation.Statics.Remove(staticHandle);
+                }
+                catch { }
+            }
+            _staticHandles.Remove(body);
+            _staticHandleToBody.Remove(staticHandle);
+            _bodyShapeIndices.Remove(body);
+            body.DetachHandle();
         }
     }
 
-    private void CreateRuntimeBody(PhysicsBody body)
+    public void UpdateBodyShape(PhysicsBody body)
     {
-        if (_simulation == null)
+        if (_simulation == null || !IsSimulating)
             return;
 
-        var shape = CreateShape(body);
-        var pose = CreatePose(body);
-        var treatAsStatic = !body.IsActive || body.Mass <= 0;
-        if (treatAsStatic)
-        {
-            var staticDescription = new StaticDescription(pose.Position, pose.Orientation, shape.ShapeIndex);
-            var staticHandle = _simulation.Statics.Add(staticDescription);
-            _staticBodyHandles[body] = staticHandle;
-            _staticHandleToBody[staticHandle] = body;
-            body.ShapeIndex = shape.ShapeIndex;
-            body.AttachStaticHandle(this, staticHandle);
+        if (body.ColliderShape == null)
             return;
+
+        try
+        {
+            System.Numerics.Vector3 savedPosition = System.Numerics.Vector3.Zero;
+            System.Numerics.Quaternion savedRotation = System.Numerics.Quaternion.Identity;
+            System.Numerics.Vector3 savedLinearVelocity = System.Numerics.Vector3.Zero;
+            System.Numerics.Vector3 savedAngularVelocity = System.Numerics.Vector3.Zero;
+
+            var wasDynamic = _bodyHandles.ContainsKey(body);
+            var wasStatic = _staticHandles.ContainsKey(body);
+
+            if (wasDynamic)
+            {
+                if (_bodyHandles.TryGetValue(body, out var handle))
+                {
+                    var reference = _simulation.Bodies.GetBodyReference(handle);
+                    savedPosition = reference.Pose.Position;
+                    savedRotation = reference.Pose.Orientation;
+                    savedLinearVelocity = reference.Velocity.Linear;
+                    savedAngularVelocity = reference.Velocity.Angular;
+
+                    _simulation.Bodies.Remove(handle);
+                    _bodyHandles.Remove(body);
+                    _handleToBody.Remove(handle);
+                    if (_bodyShapeIndices.TryGetValue(body, out var oldIndex))
+                    {
+                        try
+                        {
+                            _simulation.Shapes.Remove(oldIndex);
+                        }
+                        catch { }
+                        _bodyShapeIndices.Remove(body);
+                    }
+                    body.DetachHandle();
+                }
+            }
+            else if (wasStatic)
+            {
+                if (_staticHandles.TryGetValue(body, out var staticHandle))
+                {
+                    var reference = _simulation.Statics.GetStaticReference(staticHandle);
+                    savedPosition = reference.Pose.Position;
+                    savedRotation = reference.Pose.Orientation;
+
+                    _simulation.Statics.Remove(staticHandle);
+                    _staticHandles.Remove(body);
+                    _staticHandleToBody.Remove(staticHandle);
+                    if (_bodyShapeIndices.TryGetValue(body, out var oldIndex))
+                    {
+                        try
+                        {
+                            _simulation.Shapes.Remove(oldIndex);
+                        }
+                        catch { }
+                        _bodyShapeIndices.Remove(body);
+                    }
+                    body.DetachHandle();
+                }
+            }
+
+            body.Position = new EngineVector3(savedPosition.X, savedPosition.Y, savedPosition.Z);
+            body.Rotation = new EngineQuaternion(savedRotation.X, savedRotation.Y, savedRotation.Z, savedRotation.W);
+
+            if (body.Mass <= 0)
+            {
+                AddStaticToSimulation(body);
+            }
+            else
+            {
+                var handle = AddBodyToSimulation(body);
+                if (handle.HasValue)
+                {
+                    var reference = _simulation.Bodies.GetBodyReference(handle.Value);
+                    if (wasDynamic)
+                    {
+                        reference.Velocity.Linear = savedLinearVelocity;
+                        reference.Velocity.Angular = savedAngularVelocity;
+                    }
+                    if (body.IsKinematic)
+                    {
+                        reference.LocalInertia = default;
+                        reference.BecomeKinematic();
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to update body shape");
+        }
+    }
+
+    private BodyHandle? AddBodyToSimulation(PhysicsBody body)
+    {
+        if (_simulation == null || _bodyHandles.ContainsKey(body))
+            return null;
+
+        if (body.ColliderShape == null)
+        {
+            body.ColliderShape = new BoxColliderShape(EngineVector3.One);
         }
 
-        var collidable = new CollidableDescription(shape.ShapeIndex, 0.1f);
-        var activity = new BodyActivityDescription(0.01f);
-        BodyHandle handle;
-        if (body.IsKinematic)
+        try
         {
-            var description = BodyDescription.CreateKinematic(pose, collidable, activity);
-            handle = _simulation.Bodies.Add(description);
+            var shapeIndex = CreateShape(body);
+            if (!shapeIndex.HasValue)
+                return null;
+
+            var position = ToNumerics(body.Position);
+            var rotation = ToNumerics(body.Rotation);
+
+            if (!ValidatePosition(position) || !ValidateQuaternion(rotation))
+            {
+                Logger.Warning("Invalid pose for body, using default");
+                position = System.Numerics.Vector3.Zero;
+                rotation = System.Numerics.Quaternion.Identity;
+            }
+
+            var inertia = ComputeInertia(body, shapeIndex.Value);
+            var maxSize = GetMaxSize(body.ColliderShape);
+            var speculativeMargin = MathF.Max(0.01f, maxSize * 0.1f);
+            var description = BodyDescription.CreateDynamic(position, inertia, shapeIndex.Value, speculativeMargin);
+            if (rotation != System.Numerics.Quaternion.Identity)
+            {
+                description.Pose.Orientation = rotation;
+            }
+            var handle = _simulation.Bodies.Add(description);
+
+            _bodyHandles[body] = handle;
+            _handleToBody[handle] = body;
+            _bodyShapeIndices[body] = shapeIndex.Value;
+            body.AttachHandle(this, handle);
+            return handle;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to add body to simulation");
+            return null;
+        }
+    }
+
+    private void AddStaticToSimulation(PhysicsBody body)
+    {
+        if (_simulation == null || _staticHandles.ContainsKey(body))
+            return;
+
+        if (body.ColliderShape == null)
+        {
+            body.ColliderShape = new BoxColliderShape(EngineVector3.One);
+        }
+
+        try
+        {
+            var shapeIndex = CreateShape(body);
+            if (!shapeIndex.HasValue)
+            {
+                Logger.Warning("Failed to create shape for static body");
+                return;
+            }
+
+            var position = ToNumerics(body.Position);
+            var rotation = ToNumerics(body.Rotation);
+
+            if (!ValidatePosition(position) || !ValidateQuaternion(rotation))
+            {
+                Logger.Warning("Invalid pose for static, using default");
+                position = System.Numerics.Vector3.Zero;
+                rotation = System.Numerics.Quaternion.Identity;
+            }
+
+            var staticDescription = new StaticDescription(position, rotation, shapeIndex.Value);
+            var handle = _simulation.Statics.Add(staticDescription);
+
+            _staticHandles[body] = handle;
+            _staticHandleToBody[handle] = body;
+            _bodyShapeIndices[body] = shapeIndex.Value;
+            body.AttachStaticHandle(this, handle);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to add static to simulation");
+        }
+    }
+
+    private TypedIndex? CreateShape(PhysicsBody body)
+    {
+        if (_simulation == null)
+            return null;
+
+        var collider = body.ColliderShape ?? new BoxColliderShape(EngineVector3.One);
+
+        TypedIndex shapeIndex;
+        if (collider is BoxColliderShape box)
+        {
+            var w = MathF.Max(0.001f, MathF.Abs(box.Size.X));
+            var h = MathF.Max(0.001f, MathF.Abs(box.Size.Y));
+            var d = MathF.Max(0.001f, MathF.Abs(box.Size.Z));
+            var shape = new Box(w, h, d);
+            shapeIndex = _simulation.Shapes.Add(shape);
+        }
+        else if (collider is SphereColliderShape sphere)
+        {
+            var r = MathF.Max(0.001f, MathF.Abs(sphere.Radius));
+            var shape = new Sphere(r);
+            shapeIndex = _simulation.Shapes.Add(shape);
         }
         else
         {
-            var description = BodyDescription.CreateDynamic(pose, shape.Inertia, collidable, activity);
-            handle = _simulation.Bodies.Add(description);
+            var shape = new Box(1f, 1f, 1f);
+            shapeIndex = _simulation.Shapes.Add(shape);
         }
 
-        _dynamicBodyHandles[body] = handle;
-        _handleToBody[handle] = body;
-        body.ShapeIndex = shape.ShapeIndex;
-        body.AttachHandle(this, handle);
+        return shapeIndex;
     }
 
-    private void RemoveRuntimeBody(PhysicsBody body)
+    private float GetMaxSize(ColliderShape? collider)
     {
-        if (_simulation == null)
-            return;
-
-        if (_dynamicBodyHandles.TryGetValue(body, out var handle))
+        if (collider is BoxColliderShape box)
         {
-            _simulation.Bodies.Remove(handle);
-            _dynamicBodyHandles.Remove(body);
-            _handleToBody.Remove(handle);
+            return MathF.Max(MathF.Max(MathF.Abs(box.Size.X), MathF.Abs(box.Size.Y)), MathF.Abs(box.Size.Z));
         }
-        else if (_staticBodyHandles.TryGetValue(body, out var staticHandle))
+        else if (collider is SphereColliderShape sphere)
         {
-            _simulation.Statics.Remove(staticHandle);
-            _staticBodyHandles.Remove(body);
-            _staticHandleToBody.Remove(staticHandle);
+            return MathF.Abs(sphere.Radius) * 2f;
         }
+        return 1f;
+    }
 
-        if (body.ShapeIndex.HasValue)
+    private BodyInertia ComputeInertia(PhysicsBody body, TypedIndex shapeIndex)
+    {
+        if (body.IsKinematic || body.Mass <= 0)
+            return default;
+
+        var collider = body.ColliderShape ?? new BoxColliderShape(EngineVector3.One);
+        var mass = MathF.Max(0.0001f, body.Mass);
+
+        if (collider is BoxColliderShape box)
         {
-            _simulation.Shapes.Remove(body.ShapeIndex.Value);
-            body.ShapeIndex = null;
+            var w = MathF.Max(0.001f, MathF.Abs(box.Size.X));
+            var h = MathF.Max(0.001f, MathF.Abs(box.Size.Y));
+            var d = MathF.Max(0.001f, MathF.Abs(box.Size.Z));
+            var shape = new Box(w, h, d);
+            return shape.ComputeInertia(mass);
         }
-
-        body.DetachHandle();
+        else if (collider is SphereColliderShape sphere)
+        {
+            var r = MathF.Max(0.001f, MathF.Abs(sphere.Radius));
+            var shape = new Sphere(r);
+            return shape.ComputeInertia(mass);
+        }
+        else
+        {
+            var shape = new Box(1f, 1f, 1f);
+            return shape.ComputeInertia(mass);
+        }
     }
 
     public void Update(float deltaTime)
@@ -165,108 +478,77 @@ public class PhysicsWorld : IDisposable
         if (!IsSimulating || _simulation == null)
             return;
 
-        var clampedDelta = System.MathF.Min(deltaTime, MaxDeltaTime);
+        var clampedDelta = MathF.Min(deltaTime, MaxDeltaTime);
         _timeAccumulator += clampedDelta;
 
+        var maxSteps = 10;
         var steps = 0;
-        while (_timeAccumulator >= FixedTimeStep && steps < MaxSubstepsPerFrame)
+        while (_timeAccumulator >= FixedTimeStep && steps < maxSteps)
         {
-            StepSimulation(FixedTimeStep);
+            try
+            {
+                _simulation.Timestep(FixedTimeStep);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Physics timestep failed");
+                break;
+            }
             _timeAccumulator -= FixedTimeStep;
             steps++;
         }
-    }
-
-    private void StepSimulation(float timeStep)
-    {
-        if (_simulation == null)
-            return;
-
-        if (_threadDispatcher != null)
+        
+        foreach (var kvp in _handleToBody)
         {
-            _simulation.Timestep(timeStep, _threadDispatcher);
-        }
-        else
-        {
-            _simulation.Timestep(timeStep);
-        }
-    }
-
-    public bool Raycast(Engine.Math.Vector3 from, Engine.Math.Vector3 to, out RaycastHit hit)
-    {
-        hit = new RaycastHit();
-        if (_simulation == null)
-            return false;
-
-        var origin = ToNumerics(from);
-        var target = ToNumerics(to);
-        var direction = target - origin;
-        var length = direction.Length();
-        if (length <= float.Epsilon)
-            return false;
-
-        direction /= length;
-        var handler = new ClosestRayHitHandler();
-        _simulation.RayCast(origin, direction, length, ref handler, 0);
-        if (!handler.Hit)
-            return false;
-
-        hit.Distance = handler.T;
-        var point = origin + direction * handler.T;
-        hit.Point = new EngineVector3(point.X, point.Y, point.Z);
-        if (TryResolveBody(handler.Collidable, out var body))
-        {
-            hit.Body = body;
-        }
-        return true;
-
-    }
-
-    private struct ClosestRayHitHandler : IRayHitHandler
-    {
-        public bool Hit;
-        public float T;
-        public CollidableReference Collidable;
-
-        public bool AllowTest(CollidableReference collidable) => true;
-
-        public bool AllowTest(CollidableReference collidable, int childIndex) => true;
-
-        public void OnRayHit(in RayData ray, ref float maximumT, float t, in System.Numerics.Vector3 normal, CollidableReference collidable, int childIndex)
-        {
-            if (!Hit || t < T)
+            var body = kvp.Value;
+            if (body != null && _simulation.Bodies.BodyExists(kvp.Key))
             {
-                Hit = true;
-                T = t;
-                Collidable = collidable;
-                maximumT = t;
+                var reference = _simulation.Bodies.GetBodyReference(kvp.Key);
+                body.Position = new EngineVector3(reference.Pose.Position.X, reference.Pose.Position.Y, reference.Pose.Position.Z);
+                body.Rotation = new EngineQuaternion(reference.Pose.Orientation.X, reference.Pose.Orientation.Y, reference.Pose.Orientation.Z, reference.Pose.Orientation.W);
             }
         }
     }
 
-    private bool TryResolveBody(CollidableReference collidable, out PhysicsBody? body)
+    internal void UpdateBodyPose(PhysicsBody body)
     {
-        body = null;
-        switch (collidable.Mobility)
-        {
-            case CollidableMobility.Dynamic:
-            case CollidableMobility.Kinematic:
-                if (_handleToBody.TryGetValue(collidable.BodyHandle, out var dynamicBody))
-                {
-                    body = dynamicBody;
-                    return true;
-                }
-                break;
-            case CollidableMobility.Static:
-                if (_staticHandleToBody.TryGetValue(collidable.StaticHandle, out var staticBody))
-                {
-                    body = staticBody;
-                    return true;
-                }
-                break;
-        }
+        if (_simulation == null || !IsSimulating)
+            return;
 
-        return false;
+        try
+        {
+            var position = ToNumerics(body.Position);
+            var rotation = ToNumerics(body.Rotation);
+
+            if (!ValidatePosition(position) || !ValidateQuaternion(rotation))
+            {
+                Logger.Warning("Invalid pose detected, skipping update");
+                return;
+            }
+
+            if (_bodyHandles.TryGetValue(body, out var handle))
+            {
+                var reference = _simulation.Bodies.GetBodyReference(handle);
+                reference.Pose.Position = position;
+                reference.Pose.Orientation = rotation;
+                if (body.IsKinematic)
+                {
+                    reference.Velocity.Linear = System.Numerics.Vector3.Zero;
+                    reference.Velocity.Angular = System.Numerics.Vector3.Zero;
+                }
+            }
+            else if (_staticHandles.TryGetValue(body, out var staticHandle))
+            {
+                var reference = _simulation.Statics.GetStaticReference(staticHandle);
+                reference.Pose.Position = position;
+                reference.Pose.Orientation = rotation;
+                _simulation.Statics.UpdateBounds(staticHandle);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to update body pose");
+        }
     }
 
     internal bool TryGetBodyReference(BodyHandle handle, out BodyReference body)
@@ -276,7 +558,6 @@ public class PhysicsWorld : IDisposable
             body = _simulation.Bodies.GetBodyReference(handle);
             return true;
         }
-
         body = default;
         return false;
     }
@@ -288,210 +569,126 @@ public class PhysicsWorld : IDisposable
             reference = _simulation.Statics.GetStaticReference(handle);
             return true;
         }
-
         reference = default;
         return false;
     }
 
-    internal void UpdateStaticBounds(StaticHandle handle)
+    public void UpdateBodyMass(PhysicsBody body)
     {
-        if (_simulation == null)
+        if (_simulation == null || !IsSimulating)
             return;
 
-        _simulation.Statics.UpdateBounds(handle);
+        try
+        {
+            bool needsReregister = false;
+            
+            if (_bodyHandles.TryGetValue(body, out var handle))
+            {
+                var reference = _simulation.Bodies.GetBodyReference(handle);
+                bool wasKinematic = reference.Kinematic;
+                
+                if (body.Mass <= 0 || body.IsKinematic)
+                {
+                    if (!wasKinematic)
+                    {
+                        needsReregister = true;
+                    }
+                    else
+                    {
+                        reference.LocalInertia = default;
+                        if (body.IsKinematic && !wasKinematic)
+                        {
+                            reference.BecomeKinematic();
+                        }
+                    }
+                }
+                else
+                {
+                    if (wasKinematic || _bodyShapeIndices.TryGetValue(body, out var shapeIndex))
+                    {
+                        if (wasKinematic)
+                        {
+                            needsReregister = true;
+                        }
+                        else if (_bodyShapeIndices.TryGetValue(body, out shapeIndex))
+                        {
+                            var inertia = ComputeInertia(body, shapeIndex);
+                            reference.LocalInertia = inertia;
+                        }
+                    }
+                }
+            }
+            else if (_staticHandles.ContainsKey(body))
+            {
+                if (body.Mass > 0 && !body.IsKinematic)
+                {
+                    needsReregister = true;
+                }
+            }
+            
+            if (needsReregister)
+            {
+                UnregisterBody(body);
+                RegisterBody(body);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to update body mass");
+        }
     }
 
     public void Dispose()
     {
-        DestroySimulation();
-        _threadDispatcher?.Dispose();
-        _threadDispatcher = null;
-    }
-
-    private void DestroySimulation()
-    {
-        if (_simulation != null)
-        {
-            var dynamicBodies = new List<PhysicsBody>(_dynamicBodyHandles.Keys);
-            foreach (var body in dynamicBodies)
-            {
-                RemoveRuntimeBody(body);
-            }
-
-            var staticBodies = new List<PhysicsBody>(_staticBodyHandles.Keys);
-            foreach (var body in staticBodies)
-            {
-                RemoveRuntimeBody(body);
-            }
-
-            _simulation.Dispose();
-            _simulation = null;
-        }
-
-        _dynamicBodyHandles.Clear();
+        StopSimulation();
+        _registeredBodies.Clear();
+        _bodyHandles.Clear();
         _handleToBody.Clear();
-        _staticBodyHandles.Clear();
+        _staticHandles.Clear();
         _staticHandleToBody.Clear();
-        _bufferPool.Clear();
-        _timeAccumulator = 0f;
+        _bodyShapeIndices.Clear();
     }
 
-    internal void UpdateBodyPose(PhysicsBody body)
+    private static System.Numerics.Vector3 ToNumerics(EngineVector3 v)
     {
-        if (_simulation == null)
-            return;
-
-        if (_dynamicBodyHandles.TryGetValue(body, out var handle))
-        {
-            var reference = _simulation.Bodies.GetBodyReference(handle);
-            reference.Pose.Position = ToNumerics(body.Position);
-            reference.Pose.Orientation = ToNumerics(body.Rotation);
-            if (body.IsKinematic)
-            {
-                reference.Velocity.Linear = System.Numerics.Vector3.Zero;
-                reference.Velocity.Angular = System.Numerics.Vector3.Zero;
-            }
-        }
-        else if (_staticBodyHandles.TryGetValue(body, out var staticHandle))
-        {
-            var reference = _simulation.Statics.GetStaticReference(staticHandle);
-            reference.Pose.Position = ToNumerics(body.Position);
-            reference.Pose.Orientation = ToNumerics(body.Rotation);
-            _simulation.Statics.UpdateBounds(staticHandle);
-        }
+        if (!float.IsFinite(v.X) || !float.IsFinite(v.Y) || !float.IsFinite(v.Z))
+            return System.Numerics.Vector3.Zero;
+        return new System.Numerics.Vector3(v.X, v.Y, v.Z);
     }
 
-    private RigidPose CreatePose(PhysicsBody body)
+    private static System.Numerics.Quaternion ToNumerics(EngineQuaternion q)
     {
-        return new RigidPose(ToNumerics(body.Position), ToNumerics(body.Rotation));
-    }
-
-    private ShapeInfo CreateShape(PhysicsBody body)
-    {
-        var collider = body.ColliderShape;
-        if (collider is BoxColliderShape box)
-        {
-            if (_simulation == null)
-                throw new InvalidOperationException("Simulation is not initialized.");
-
-            var width = GetSanitizedSize(box.Size.X);
-            var height = GetSanitizedSize(box.Size.Y);
-            var depth = GetSanitizedSize(box.Size.Z);
-            var shape = new Box(width, height, depth);
-            var inertia = body.IsKinematic ? default : shape.ComputeInertia(System.MathF.Max(0.0001f, body.Mass));
-            var shapeIndex = _simulation.Shapes.Add(shape);
-            return new ShapeInfo(shapeIndex, inertia);
-        }
-
-        if (collider is SphereColliderShape sphere)
-        {
-            if (_simulation == null)
-                throw new InvalidOperationException("Simulation is not initialized.");
-
-            var radius = GetSanitizedSize(sphere.Radius);
-            var shape = new Sphere(radius);
-            var inertia = body.IsKinematic ? default : shape.ComputeInertia(System.MathF.Max(0.0001f, body.Mass));
-            var shapeIndex = _simulation.Shapes.Add(shape);
-            return new ShapeInfo(shapeIndex, inertia);
-        }
-
-        if (_simulation == null)
-            throw new InvalidOperationException("Simulation is not initialized.");
-
-        var defaultShape = new Box(1f, 1f, 1f);
-        var defaultInertia = body.IsKinematic ? default : defaultShape.ComputeInertia(System.MathF.Max(0.0001f, body.Mass));
-        var defaultIndex = _simulation.Shapes.Add(defaultShape);
-        return new ShapeInfo(defaultIndex, defaultInertia);
-    }
-
-    private static float GetSanitizedSize(float value)
-    {
-        var sanitized = System.MathF.Abs(SanitizeFloat(value));
-        return System.MathF.Max(0.001f, System.MathF.Min(sanitized, 1000f));
-    }
-
-    private static System.Numerics.Vector3 ToNumerics(EngineVector3 value)
-    {
-        return new System.Numerics.Vector3(
-            SanitizeFloat(value.X),
-            SanitizeFloat(value.Y),
-            SanitizeFloat(value.Z));
-    }
-
-    private static System.Numerics.Quaternion ToNumerics(EngineQuaternion value)
-    {
-        var quaternion = new System.Numerics.Quaternion(
-            SanitizeFloat(value.X),
-            SanitizeFloat(value.Y),
-            SanitizeFloat(value.Z),
-            SanitizeFloat(value.W));
-
-        var lengthSquared =
-            quaternion.X * quaternion.X +
-            quaternion.Y * quaternion.Y +
-            quaternion.Z * quaternion.Z +
-            quaternion.W * quaternion.W;
-        if (!float.IsFinite(lengthSquared) || lengthSquared < 1e-6f)
+        if (!float.IsFinite(q.X) || !float.IsFinite(q.Y) || !float.IsFinite(q.Z) || !float.IsFinite(q.W))
             return System.Numerics.Quaternion.Identity;
 
-        return System.Numerics.Quaternion.Normalize(quaternion);
+        var quat = new System.Numerics.Quaternion(q.X, q.Y, q.Z, q.W);
+        var lenSq = quat.X * quat.X + quat.Y * quat.Y + quat.Z * quat.Z + quat.W * quat.W;
+        if (lenSq < 1e-6f)
+            return System.Numerics.Quaternion.Identity;
+
+        return System.Numerics.Quaternion.Normalize(quat);
     }
 
-    private static float SanitizeFloat(float value)
+    private static bool ValidatePosition(System.Numerics.Vector3 position)
     {
-        if (float.IsNaN(value) || float.IsInfinity(value))
-            return 0f;
-        return System.Math.Clamp(value, -1_000_000f, 1_000_000f);
+        return float.IsFinite(position.X) && float.IsFinite(position.Y) && float.IsFinite(position.Z);
     }
 
-    private readonly struct ShapeInfo
+    private static bool ValidateQuaternion(System.Numerics.Quaternion quaternion)
     {
-        public ShapeInfo(TypedIndex shapeIndex, BodyInertia inertia)
-        {
-            ShapeIndex = shapeIndex;
-            Inertia = inertia;
-        }
-
-        public TypedIndex ShapeIndex { get; }
-        public BodyInertia Inertia { get; }
+        var lengthSquared = quaternion.X * quaternion.X + quaternion.Y * quaternion.Y + quaternion.Z * quaternion.Z + quaternion.W * quaternion.W;
+        return float.IsFinite(lengthSquared) && lengthSquared > 1e-6f;
     }
 }
 
-public class RaycastHit
+internal struct SimpleNarrowPhaseCallbacks : INarrowPhaseCallbacks
 {
-    public float Distance { get; set; } = -1;
-    public EngineVector3 Point { get; set; }
-    public PhysicsBody? Body { get; set; }
-}
-
-internal struct PhysicsNarrowPhaseCallbacks : INarrowPhaseCallbacks
-{
-    public SpringSettings SpringSettings;
-    public float FrictionCoefficient;
-    public float MaximumRecoveryVelocity;
-
-    public PhysicsNarrowPhaseCallbacks(float friction = 1f, float maxRecoveryVelocity = 2f)
-    {
-        FrictionCoefficient = friction;
-        MaximumRecoveryVelocity = maxRecoveryVelocity;
-        SpringSettings = new SpringSettings(30f, 1f);
-    }
-
-    public void Initialize(Simulation simulation)
-    {
-    }
-
-    public void Dispose()
-    {
-    }
+    public void Initialize(Simulation simulation) { }
+    public void Dispose() { }
 
     public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b, ref float speculativeMargin)
     {
-        if (a.Mobility == CollidableMobility.Static && b.Mobility == CollidableMobility.Static)
-            return false;
-
-        speculativeMargin = 0.1f;
-        return true;
+        return a.Mobility == CollidableMobility.Dynamic || b.Mobility == CollidableMobility.Dynamic;
     }
 
     public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
@@ -499,76 +696,59 @@ internal struct PhysicsNarrowPhaseCallbacks : INarrowPhaseCallbacks
         return true;
     }
 
-    public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, ref ConvexContactManifold manifold) => true;
-
-    public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold) => true;
-
-    public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, ref NonconvexContactManifold manifold) => true;
-
-    public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref NonconvexContactManifold manifold) => true;
-
-    public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
+    public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, ref ConvexContactManifold manifold)
     {
-        pairMaterial = new PairMaterialProperties
-        {
-            FrictionCoefficient = FrictionCoefficient,
-            MaximumRecoveryVelocity = MaximumRecoveryVelocity,
-            SpringSettings = SpringSettings
-        };
         return true;
     }
 
+    public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
+    {
+        return true;
+    }
+
+    public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, ref NonconvexContactManifold manifold)
+    {
+        return true;
+    }
+
+    public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref NonconvexContactManifold manifold)
+    {
+        return true;
+    }
+
+    public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
+    {
+        pairMaterial.FrictionCoefficient = 0.5f;
+        pairMaterial.MaximumRecoveryVelocity = 10f;
+        pairMaterial.SpringSettings = new SpringSettings(30, 0.1f);
+        return true;
+    }
 }
 
-internal struct PhysicsPoseIntegratorCallbacks : IPoseIntegratorCallbacks
+internal struct SimplePoseIntegratorCallbacks : IPoseIntegratorCallbacks
 {
     public System.Numerics.Vector3 Gravity;
-    public float LinearDamping;
-    public float AngularDamping;
+    private Vector3Wide _gravityWideDt;
 
-    public PhysicsPoseIntegratorCallbacks(System.Numerics.Vector3 gravity, float linearDamping = 0.01f, float angularDamping = 0.01f)
+    public SimplePoseIntegratorCallbacks(System.Numerics.Vector3 gravity)
     {
         Gravity = gravity;
-        LinearDamping = linearDamping;
-        AngularDamping = angularDamping;
+        _gravityWideDt = default;
     }
 
     public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.Nonconserving;
-
     public bool AllowSubstepsForUnconstrainedBodies => false;
+    public bool IntegrateVelocityForKinematics => false;
 
-    public bool IntegrateVelocityForKinematics => true;
-
-    public void Initialize(Simulation simulation)
-    {
-    }
+    public void Initialize(Simulation simulation) { }
 
     public void PrepareForIntegration(float dt)
     {
+        _gravityWideDt = Vector3Wide.Broadcast(Gravity * dt);
     }
 
     public void IntegrateVelocity(System.Numerics.Vector<int> bodyIndices, Vector3Wide positions, QuaternionWide orientations, BodyInertiaWide localInertias, System.Numerics.Vector<int> integrationMask, int workerIndex, System.Numerics.Vector<float> dt, ref BodyVelocityWide velocity)
     {
-        Vector3Wide gravityDt;
-        Vector3Wide.Broadcast(Gravity, out gravityDt);
-        Vector3Wide.Scale(gravityDt, dt, out gravityDt);
-        Vector3Wide.Add(velocity.Linear, gravityDt, out velocity.Linear);
-
-        if (LinearDamping > 0f)
-        {
-            var damping = System.Numerics.Vector<float>.One - new System.Numerics.Vector<float>(LinearDamping) * dt;
-            damping = System.Numerics.Vector.Min(System.Numerics.Vector<float>.One, System.Numerics.Vector.Max(System.Numerics.Vector<float>.Zero, damping));
-            Vector3Wide.Scale(velocity.Linear, damping, out velocity.Linear);
-        }
-
-        if (AngularDamping > 0f)
-        {
-            var damping = System.Numerics.Vector<float>.One - new System.Numerics.Vector<float>(AngularDamping) * dt;
-            damping = System.Numerics.Vector.Min(System.Numerics.Vector<float>.One, System.Numerics.Vector.Max(System.Numerics.Vector<float>.Zero, damping));
-            Vector3Wide.Scale(velocity.Angular, damping, out velocity.Angular);
-        }
+        Vector3Wide.Add(velocity.Linear, _gravityWideDt, out velocity.Linear);
     }
 }
-
-
-

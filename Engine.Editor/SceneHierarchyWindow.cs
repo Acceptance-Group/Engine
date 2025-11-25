@@ -1,3 +1,4 @@
+using System.Linq;
 using ImGuiNET;
 using Engine.Core;
 
@@ -28,7 +29,7 @@ public class SceneHierarchyWindow
 
                 ImGui.Separator();
 
-                foreach (var gameObject in scene.GameObjects)
+                foreach (var gameObject in scene.GameObjects.ToArray())
                 {
                     RenderGameObject(gameObject);
                 }
@@ -71,7 +72,7 @@ public class SceneHierarchyWindow
 
         if (isOpen)
         {
-            foreach (var child in gameObject.Transform.Children)
+            foreach (var child in gameObject.Transform.Children.ToArray())
             {
                 if (child.GameObject != null)
                     RenderGameObject(child.GameObject);

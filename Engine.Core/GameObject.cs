@@ -6,7 +6,7 @@ namespace Engine.Core;
 
 public class GameObject
 {
-    private readonly Dictionary<Type, Component> _components = new Dictionary<Type, Component>();
+    private readonly Dictionary<Type, List<Component>> _components = new Dictionary<Type, List<Component>>();
     private readonly List<Component> _componentList = new List<Component>();
     private Transform? _transform;
     private string _name;
@@ -63,20 +63,28 @@ public class GameObject
             throw new InvalidOperationException("Component is already attached to a GameObject");
 
         Type type = component.GetType();
-        if (_components.ContainsKey(type))
-            throw new InvalidOperationException($"Component of type {type.Name} already exists");
+        if (type == typeof(Transform) && _transform != null && component != _transform)
+            throw new InvalidOperationException("GameObject already has a Transform");
 
-        _components[type] = component;
+        if (!_components.TryGetValue(type, out var list))
+        {
+            list = new List<Component>();
+            _components[type] = list;
+        }
+
+        list.Add(component);
         _componentList.Add(component);
         component.GameObject = this;
+        if (component is Transform transform)
+            _transform = transform;
         component.OnAttached();
     }
 
     public T? GetComponent<T>() where T : Component
     {
         Type type = typeof(T);
-        if (_components.TryGetValue(type, out var component))
-            return (T)component;
+        if (_components.TryGetValue(type, out var components) && components.Count > 0)
+            return (T)components[0];
 
         foreach (var comp in _componentList)
         {
@@ -94,16 +102,8 @@ public class GameObject
 
     public bool RemoveComponent<T>() where T : Component
     {
-        Type type = typeof(T);
-        if (_components.TryGetValue(type, out var component))
-        {
-            _components.Remove(type);
-            _componentList.Remove(component);
-            component.OnDetached();
-            component.GameObject = null;
-            return true;
-        }
-        return false;
+        var component = _componentList.FirstOrDefault(c => c is T);
+        return component != null && RemoveComponent(component);
     }
 
     public bool RemoveComponent(Component component)
@@ -112,14 +112,23 @@ public class GameObject
             return false;
 
         Type type = component.GetType();
-        if (_components.Remove(type))
-        {
-            _componentList.Remove(component);
-            component.OnDetached();
-            component.GameObject = null;
-            return true;
-        }
-        return false;
+        if (!_components.TryGetValue(type, out var list))
+            return false;
+
+        if (!list.Remove(component))
+            return false;
+
+        if (list.Count == 0)
+            _components.Remove(type);
+
+        _componentList.Remove(component);
+        component.OnDetached();
+        component.GameObject = null;
+
+        if (component == _transform)
+            _transform = null;
+
+        return true;
     }
 
     internal void Start()

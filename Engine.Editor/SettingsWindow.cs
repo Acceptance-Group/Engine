@@ -123,14 +123,6 @@ public class SettingsWindow
                 var physicsWorld = _editor.PhysicsWorld;
                 if (physicsWorld != null)
                 {
-                    bool isSimulating = _editor.IsPhysicsSimulating;
-                    if (ImGui.Checkbox("Simulate Physics", ref isSimulating))
-                    {
-                        _editor.IsPhysicsSimulating = isSimulating;
-                    }
-
-                    ImGui.Separator();
-
                     var gravity = physicsWorld.Gravity;
                     System.Numerics.Vector3 gravityVec = new System.Numerics.Vector3(gravity.X, gravity.Y, gravity.Z);
                     if (ImGui.DragFloat3("Gravity", ref gravityVec))
