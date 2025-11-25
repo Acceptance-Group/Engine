@@ -1,0 +1,262 @@
+using System;
+using ImGuiNET;
+using Engine.Graphics;
+using Engine.Physics;
+
+namespace Engine.Editor;
+
+public class SettingsWindow
+{
+    private readonly EditorApplication _editor;
+    private bool _showWindow = true;
+
+    public SettingsWindow(EditorApplication editor)
+    {
+        _editor = editor;
+    }
+
+    public void Render()
+    {
+        if (!_showWindow)
+            return;
+
+        if (ImGui.Begin("Settings", ref _showWindow))
+        {
+            if (ImGui.CollapsingHeader("Shadows"))
+            {
+                var shadowSettings = _editor.ShadowSettings;
+                if (shadowSettings != null)
+                {
+                    bool enabled = shadowSettings.Enabled;
+                    if (ImGui.Checkbox("Enable Shadows", ref enabled))
+                    {
+                        shadowSettings.Enabled = enabled;
+                    }
+
+                    int resolution = shadowSettings.ShadowMapResolution;
+                    if (ImGui.SliderInt("Shadow Map Resolution", ref resolution, 512, 8192))
+                    {
+                        shadowSettings.ShadowMapResolution = resolution;
+                    }
+
+                    float depthBias = shadowSettings.DepthBias;
+                    if (ImGui.SliderFloat("Depth Bias", ref depthBias, 0.0f, 0.1f))
+                    {
+                        shadowSettings.DepthBias = depthBias;
+                    }
+
+                    float normalBias = shadowSettings.NormalBias;
+                    if (ImGui.SliderFloat("Normal Bias", ref normalBias, 0.0f, 0.1f))
+                    {
+                        shadowSettings.NormalBias = normalBias;
+                    }
+
+                    float shadowDistance = shadowSettings.ShadowDistance;
+                    if (ImGui.SliderFloat("Shadow Distance", ref shadowDistance, 1.0f, 1000.0f))
+                    {
+                        shadowSettings.ShadowDistance = shadowDistance;
+                    }
+
+                    float shadowOpacity = shadowSettings.ShadowOpacity;
+                    if (ImGui.SliderFloat("Shadow Opacity", ref shadowOpacity, 0.0f, 1.0f))
+                    {
+                        shadowSettings.ShadowOpacity = shadowOpacity;
+                    }
+
+                    ImGui.Separator();
+
+                    bool softShadows = shadowSettings.SoftShadows;
+                    if (ImGui.Checkbox("Soft Shadows", ref softShadows))
+                    {
+                        shadowSettings.SoftShadows = softShadows;
+                    }
+
+                    if (softShadows)
+                    {
+                        int quality = (int)shadowSettings.Quality;
+                        string[] qualities = { "Low", "Medium", "High", "Ultra", "Cinematic" };
+                        if (ImGui.Combo("Shadow Quality", ref quality, qualities, qualities.Length))
+                        {
+                            shadowSettings.Quality = (ShadowQuality)quality;
+                        }
+                    }
+
+                    ImGui.Separator();
+
+                    bool useCascaded = shadowSettings.UseCascadedShadowMaps;
+                    if (ImGui.Checkbox("Use Cascaded Shadow Maps", ref useCascaded))
+                    {
+                        shadowSettings.UseCascadedShadowMaps = useCascaded;
+                    }
+
+                    if (useCascaded)
+                    {
+                        int cascadeCount = shadowSettings.CascadeCount;
+                        if (ImGui.SliderInt("Cascade Count", ref cascadeCount, 1, 8))
+                        {
+                            shadowSettings.CascadeCount = cascadeCount;
+                        }
+
+                        float blendArea = shadowSettings.CascadeBlendArea;
+                        if (ImGui.SliderFloat("Cascade Blend Area", ref blendArea, 0.0f, 0.2f))
+                        {
+                            shadowSettings.CascadeBlendArea = blendArea;
+                        }
+
+                        ImGui.Text("Cascade Splits:");
+                        var splits = shadowSettings.CascadeSplits;
+                        for (int i = 0; i < cascadeCount && i < splits.Length; i++)
+                        {
+                            float split = splits[i];
+                            string label = $"Split {i}";
+                            if (ImGui.SliderFloat(label, ref split, 0.0f, 1.0f))
+                            {
+                                splits[i] = split;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (ImGui.CollapsingHeader("Physics"))
+            {
+                var physicsWorld = _editor.PhysicsWorld;
+                if (physicsWorld != null)
+                {
+                    bool isSimulating = _editor.IsPhysicsSimulating;
+                    if (ImGui.Checkbox("Simulate Physics", ref isSimulating))
+                    {
+                        _editor.IsPhysicsSimulating = isSimulating;
+                    }
+
+                    ImGui.Separator();
+
+                    var gravity = physicsWorld.Gravity;
+                    System.Numerics.Vector3 gravityVec = new System.Numerics.Vector3(gravity.X, gravity.Y, gravity.Z);
+                    if (ImGui.DragFloat3("Gravity", ref gravityVec))
+                    {
+                        physicsWorld.Gravity = new Engine.Math.Vector3(gravityVec.X, gravityVec.Y, gravityVec.Z);
+                    }
+
+                    bool showDebug = _editor.ShowPhysicsDebug;
+                    if (ImGui.Checkbox("Show Physics Debug", ref showDebug))
+                    {
+                        _editor.ShowPhysicsDebug = showDebug;
+                    }
+                }
+            }
+
+            if (ImGui.CollapsingHeader("Anti-Aliasing"))
+            {
+                var aaSettings = _editor.AntiAliasingSettings;
+                if (aaSettings != null)
+                {
+                    int mode = (int)aaSettings.Mode;
+                    string[] modes = { "None", "MSAA 2x", "MSAA 4x", "MSAA 8x", "FXAA", "SMAA" };
+                    if (ImGui.Combo("Mode", ref mode, modes, modes.Length))
+                    {
+                        aaSettings.Mode = (AntiAliasingMode)mode;
+                    }
+
+                    if (aaSettings.Mode == AntiAliasingMode.FXAA || aaSettings.Mode == AntiAliasingMode.SMAA)
+                    {
+                        int quality = (int)aaSettings.Quality;
+                        string[] qualities = { "Low", "Medium", "High", "Ultra" };
+                        if (ImGui.Combo("Quality", ref quality, qualities, qualities.Length))
+                        {
+                            aaSettings.Quality = (AntiAliasingQuality)quality;
+                        }
+                    }
+                }
+            }
+
+            if (ImGui.CollapsingHeader("Post Processing"))
+            {
+                var ppSettings = _editor.PostProcessingSettings;
+                if (ppSettings != null)
+                {
+                    bool motionBlur = ppSettings.MotionBlurEnabled;
+                    if (ImGui.Checkbox("Motion Blur", ref motionBlur))
+                    {
+                        ppSettings.MotionBlurEnabled = motionBlur;
+                    }
+
+                    if (motionBlur)
+                    {
+                        float intensity = ppSettings.MotionBlurIntensity;
+                        if (ImGui.SliderFloat("Motion Blur Intensity", ref intensity, 0.0f, 1.0f))
+                        {
+                            ppSettings.MotionBlurIntensity = intensity;
+                        }
+                    }
+
+                    ImGui.Separator();
+
+                    bool bloom = ppSettings.BloomEnabled;
+                    if (ImGui.Checkbox("Bloom", ref bloom))
+                    {
+                        ppSettings.BloomEnabled = bloom;
+                    }
+
+                    if (bloom)
+                    {
+                        float intensity = ppSettings.BloomIntensity;
+                        if (ImGui.SliderFloat("Bloom Intensity", ref intensity, 0.0f, 3.0f))
+                        {
+                            ppSettings.BloomIntensity = intensity;
+                        }
+
+                        float threshold = ppSettings.BloomThreshold;
+                        if (ImGui.SliderFloat("Bloom Threshold", ref threshold, 0.0f, 1.0f))
+                        {
+                            ppSettings.BloomThreshold = threshold;
+                        }
+
+                        float radius = ppSettings.BloomRadius;
+                        if (ImGui.SliderFloat("Bloom Radius", ref radius, 1.0f, 20.0f))
+                        {
+                            ppSettings.BloomRadius = radius;
+                        }
+                    }
+
+                    ImGui.Separator();
+
+                    bool vignette = ppSettings.VignetteEnabled;
+                    if (ImGui.Checkbox("Vignette", ref vignette))
+                    {
+                        ppSettings.VignetteEnabled = vignette;
+                    }
+
+                    if (vignette)
+                    {
+                        float intensity = ppSettings.VignetteIntensity;
+                        if (ImGui.SliderFloat("Vignette Intensity", ref intensity, 0.0f, 1.0f))
+                        {
+                            ppSettings.VignetteIntensity = intensity;
+                        }
+
+                        float radius = ppSettings.VignetteRadius;
+                        if (ImGui.SliderFloat("Vignette Radius", ref radius, 0.0f, 1.0f))
+                        {
+                            ppSettings.VignetteRadius = radius;
+                        }
+
+                        float smoothness = ppSettings.VignetteSmoothness;
+                        if (ImGui.SliderFloat("Vignette Smoothness", ref smoothness, 0.0f, 1.0f))
+                        {
+                            ppSettings.VignetteSmoothness = smoothness;
+                        }
+                    }
+                }
+            }
+        }
+        ImGui.End();
+    }
+
+    public bool IsVisible
+    {
+        get => _showWindow;
+        set => _showWindow = value;
+    }
+}
+

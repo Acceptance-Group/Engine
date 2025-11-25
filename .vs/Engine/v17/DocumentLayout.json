@@ -1,0 +1,105 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\moonway\\Desktop\\Engine\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A5E1F944-1A39-44F8-962C-C62F9727FFE2}|Engine.Physics\\Engine.Physics.csproj|c:\\users\\moonway\\desktop\\engine\\engine.physics\\physicsworld.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A5E1F944-1A39-44F8-962C-C62F9727FFE2}|Engine.Physics\\Engine.Physics.csproj|solutionrelative:engine.physics\\physicsworld.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A5E1F944-1A39-44F8-962C-C62F9727FFE2}|Engine.Physics\\Engine.Physics.csproj|c:\\users\\moonway\\desktop\\engine\\engine.physics\\meshcollider.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A5E1F944-1A39-44F8-962C-C62F9727FFE2}|Engine.Physics\\Engine.Physics.csproj|solutionrelative:engine.physics\\meshcollider.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A5E1F944-1A39-44F8-962C-C62F9727FFE2}|Engine.Physics\\Engine.Physics.csproj|c:\\users\\moonway\\desktop\\engine\\engine.physics\\physicscomponent.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A5E1F944-1A39-44F8-962C-C62F9727FFE2}|Engine.Physics\\Engine.Physics.csproj|solutionrelative:engine.physics\\physicscomponent.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3C5445F1-8A06-48BD-8E9E-E950FB181692}|Engine.Editor\\Engine.Editor.csproj|c:\\users\\moonway\\desktop\\engine\\engine.editor\\editorapplication.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3C5445F1-8A06-48BD-8E9E-E950FB181692}|Engine.Editor\\Engine.Editor.csproj|solutionrelative:engine.editor\\editorapplication.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{65C1EF43-3627-4975-8EAF-0687ADE57991}|Engine.Graphics\\Engine.Graphics.csproj|c:\\users\\moonway\\desktop\\engine\\engine.graphics\\skybox.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{65C1EF43-3627-4975-8EAF-0687ADE57991}|Engine.Graphics\\Engine.Graphics.csproj|solutionrelative:engine.graphics\\skybox.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "PhysicsWorld.cs",
+              "DocumentMoniker": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Physics\\PhysicsWorld.cs",
+              "RelativeDocumentMoniker": "Engine.Physics\\PhysicsWorld.cs",
+              "ToolTip": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Physics\\PhysicsWorld.cs",
+              "RelativeToolTip": "Engine.Physics\\PhysicsWorld.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAASAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-24T09:22:54.116Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "MeshCollider.cs",
+              "DocumentMoniker": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Physics\\MeshCollider.cs",
+              "RelativeDocumentMoniker": "Engine.Physics\\MeshCollider.cs",
+              "ToolTip": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Physics\\MeshCollider.cs",
+              "RelativeToolTip": "Engine.Physics\\MeshCollider.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-24T09:22:52.362Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "PhysicsComponent.cs",
+              "DocumentMoniker": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Physics\\PhysicsComponent.cs",
+              "RelativeDocumentMoniker": "Engine.Physics\\PhysicsComponent.cs",
+              "ToolTip": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Physics\\PhysicsComponent.cs",
+              "RelativeToolTip": "Engine.Physics\\PhysicsComponent.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAwAAAArAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-24T08:51:55.025Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "EditorApplication.cs",
+              "DocumentMoniker": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Editor\\EditorApplication.cs",
+              "RelativeDocumentMoniker": "Engine.Editor\\EditorApplication.cs",
+              "ToolTip": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Editor\\EditorApplication.cs",
+              "RelativeToolTip": "Engine.Editor\\EditorApplication.cs",
+              "ViewState": "AgIAAE8CAAAAAAAAAAAawF8CAAAaAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T20:29:20.643Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "Skybox.cs",
+              "DocumentMoniker": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Graphics\\Skybox.cs",
+              "RelativeDocumentMoniker": "Engine.Graphics\\Skybox.cs",
+              "ToolTip": "C:\\Users\\moonway\\Desktop\\Engine\\Engine.Graphics\\Skybox.cs",
+              "RelativeToolTip": "Engine.Graphics\\Skybox.cs",
+              "ViewState": "AgIAAHUAAAAAAAAAAAAgwIYAAAAhAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T12:05:34.167Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

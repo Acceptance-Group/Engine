@@ -1,0 +1,58 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Engine.Core", "Engine.Core\Engine.Core.csproj", "{AA29D52C-D7E5-4B96-877A-24B02C02D14B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Engine.Math", "Engine.Math\Engine.Math.csproj", "{86523187-39E8-4218-AE39-5791E77EFAF3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Engine.Graphics", "Engine.Graphics\Engine.Graphics.csproj", "{65C1EF43-3627-4975-8EAF-0687ADE57991}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Engine.Renderer", "Engine.Renderer\Engine.Renderer.csproj", "{AEE9BB6C-57C2-4C87-855E-E402A56C2813}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Engine.Content", "Engine.Content\Engine.Content.csproj", "{9A796CA2-3107-4EA8-B47F-F0137D75FDC9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Engine.Physics", "Engine.Physics\Engine.Physics.csproj", "{A5E1F944-1A39-44F8-962C-C62F9727FFE2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Engine.Editor", "Engine.Editor\Engine.Editor.csproj", "{3C5445F1-8A06-48BD-8E9E-E950FB181692}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AA29D52C-D7E5-4B96-877A-24B02C02D14B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AA29D52C-D7E5-4B96-877A-24B02C02D14B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AA29D52C-D7E5-4B96-877A-24B02C02D14B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AA29D52C-D7E5-4B96-877A-24B02C02D14B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{86523187-39E8-4218-AE39-5791E77EFAF3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{86523187-39E8-4218-AE39-5791E77EFAF3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{86523187-39E8-4218-AE39-5791E77EFAF3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{86523187-39E8-4218-AE39-5791E77EFAF3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{65C1EF43-3627-4975-8EAF-0687ADE57991}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{65C1EF43-3627-4975-8EAF-0687ADE57991}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{65C1EF43-3627-4975-8EAF-0687ADE57991}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{65C1EF43-3627-4975-8EAF-0687ADE57991}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AEE9BB6C-57C2-4C87-855E-E402A56C2813}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AEE9BB6C-57C2-4C87-855E-E402A56C2813}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AEE9BB6C-57C2-4C87-855E-E402A56C2813}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AEE9BB6C-57C2-4C87-855E-E402A56C2813}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9A796CA2-3107-4EA8-B47F-F0137D75FDC9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9A796CA2-3107-4EA8-B47F-F0137D75FDC9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9A796CA2-3107-4EA8-B47F-F0137D75FDC9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9A796CA2-3107-4EA8-B47F-F0137D75FDC9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A5E1F944-1A39-44F8-962C-C62F9727FFE2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A5E1F944-1A39-44F8-962C-C62F9727FFE2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A5E1F944-1A39-44F8-962C-C62F9727FFE2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A5E1F944-1A39-44F8-962C-C62F9727FFE2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3C5445F1-8A06-48BD-8E9E-E950FB181692}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3C5445F1-8A06-48BD-8E9E-E950FB181692}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3C5445F1-8A06-48BD-8E9E-E950FB181692}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3C5445F1-8A06-48BD-8E9E-E950FB181692}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
