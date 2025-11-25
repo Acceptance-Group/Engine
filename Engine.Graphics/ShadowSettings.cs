@@ -23,7 +23,7 @@ public class ShadowSettings
     
     public bool UseCascadedShadowMaps { get; set; } = true;
     public int CascadeCount { get; set; } = 8;
-    public float[] CascadeSplits { get; set; } = new float[] { 0.05f, 0.10f, 0.15f, 0.25f, 0.35f, 0.50f, 0.75f, 1.0f };
+    public float[] CascadeSplits { get; set; } = new float[] { 0.05f, 0.15f, 0.25f, 0.30f, 0.35f, 0.50f, 0.75f, 1.0f };
     public float CascadeBlendArea { get; set; } = 0.05f;
 }
 

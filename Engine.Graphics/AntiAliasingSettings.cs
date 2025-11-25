@@ -20,8 +20,8 @@ public enum AntiAliasingQuality
 
 public class AntiAliasingSettings
 {
-    public AntiAliasingMode Mode { get; set; } = AntiAliasingMode.None;
-    public AntiAliasingQuality Quality { get; set; } = AntiAliasingQuality.Medium;
+    public AntiAliasingMode Mode { get; set; } = AntiAliasingMode.FXAA;
+    public AntiAliasingQuality Quality { get; set; } = AntiAliasingQuality.Ultra;
     public bool Enabled => Mode != AntiAliasingMode.None;
 }
 
