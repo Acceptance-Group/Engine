@@ -98,10 +98,12 @@ in vec2 TexCoord;
 out vec4 FragColor;
 uniform sampler2D uTexture;
 uniform float uThreshold;
+uniform float uSoftKnee;
 void main() {
     vec3 color = texture(uTexture, TexCoord).rgb;
     float brightness = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    float contribution = smoothstep(uThreshold - 0.15, uThreshold + 0.15, brightness);
+    float knee = uSoftKnee * 0.5;
+    float contribution = smoothstep(uThreshold - knee, uThreshold + knee, brightness);
     FragColor = vec4(color * contribution, 1.0);
 }";
 
@@ -133,10 +135,13 @@ out vec4 FragColor;
 uniform sampler2D uTexture;
 uniform sampler2D uBloomTexture;
 uniform float uIntensity;
+uniform float uScatter;
 void main() {
     vec4 original = texture(uTexture, TexCoord);
     vec4 bloom = texture(uBloomTexture, TexCoord);
-    FragColor = original + bloom * uIntensity;
+    vec3 bloomColor = bloom.rgb;
+    bloomColor = pow(bloomColor, vec3(1.0 / uScatter));
+    FragColor = vec4(original.rgb + bloomColor * uIntensity, original.a);
 }";
 
         _extractShader = new Shader(vertexShader, extractFragmentShader);
@@ -165,9 +170,10 @@ void main() {
         GL.BindTexture(TextureTarget.Texture2D, sourceTexture);
         _extractShader.SetInt("uTexture", 0);
         _extractShader.SetFloat("uThreshold", _settings.BloomThreshold);
+        _extractShader.SetFloat("uSoftKnee", _settings.BloomSoftKnee);
         RenderQuad();
 
-        float radius = _settings.BloomRadius / _width;
+        float radius = _settings.BloomDiffusion / _width;
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _blurFramebuffer1);
         GL.Clear(ClearBufferMask.ColorBufferBit);
         _blurShader.Use();
@@ -177,7 +183,7 @@ void main() {
         _blurShader.SetFloat("uRadius", radius);
         RenderQuad();
 
-        radius = _settings.BloomRadius / _height;
+        radius = _settings.BloomDiffusion / _height;
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _blurFramebuffer2);
         GL.Clear(ClearBufferMask.ColorBufferBit);
         _blurShader.Use();
@@ -197,6 +203,7 @@ void main() {
         GL.BindTexture(TextureTarget.Texture2D, _blurTexture2);
         _combineShader.SetInt("uBloomTexture", 1);
         _combineShader.SetFloat("uIntensity", _settings.BloomIntensity);
+        _combineShader.SetFloat("uScatter", System.Math.Max(0.1f, _settings.BloomScatter));
         RenderQuad();
 
         if (targetFramebuffer > 0)

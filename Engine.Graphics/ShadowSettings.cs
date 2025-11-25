@@ -12,10 +12,10 @@ public enum ShadowQuality
 public class ShadowSettings
 {
     public bool Enabled { get; set; } = true;
-    public int ShadowMapResolution { get; set; } = 2048;
+    public int ShadowMapResolution { get; set; } = 4096;
     public float DepthBias { get; set; } = 0.005f;
     public float NormalBias { get; set; } = 1.0f;
-    public float ShadowDistance { get; set; } = 18.0f;
+    public float ShadowDistance { get; set; } = 500.0f;
     public float ShadowOpacity { get; set; } = 0.8f;
     
     public bool SoftShadows { get; set; } = true;

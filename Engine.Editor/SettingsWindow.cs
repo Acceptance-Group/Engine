@@ -184,9 +184,27 @@ public class SettingsWindow
                     if (motionBlur)
                     {
                         float intensity = ppSettings.MotionBlurIntensity;
-                        if (ImGui.SliderFloat("Motion Blur Intensity", ref intensity, 0.0f, 1.0f))
+                        if (ImGui.SliderFloat("Motion Blur Strength", ref intensity, 0.0f, 2.0f))
                         {
                             ppSettings.MotionBlurIntensity = intensity;
+                        }
+
+                        float shutter = ppSettings.MotionBlurShutterAngle;
+                        if (ImGui.SliderFloat("Shutter Angle", ref shutter, 0.0f, 360.0f))
+                        {
+                            ppSettings.MotionBlurShutterAngle = shutter;
+                        }
+
+                        int samples = ppSettings.MotionBlurSampleCount;
+                        if (ImGui.SliderInt("Sample Count", ref samples, 4, 32))
+                        {
+                            ppSettings.MotionBlurSampleCount = System.Math.Clamp(samples, 4, 32);
+                        }
+
+                        float maxDistance = ppSettings.MotionBlurMaxSampleDistance;
+                        if (ImGui.SliderFloat("Max Sample Distance", ref maxDistance, 0.05f, 2.0f))
+                        {
+                            ppSettings.MotionBlurMaxSampleDistance = maxDistance;
                         }
                     }
 
@@ -207,15 +225,33 @@ public class SettingsWindow
                         }
 
                         float threshold = ppSettings.BloomThreshold;
-                        if (ImGui.SliderFloat("Bloom Threshold", ref threshold, 0.0f, 1.0f))
+                        if (ImGui.SliderFloat("Bloom Threshold", ref threshold, 0.0f, 2.0f))
                         {
                             ppSettings.BloomThreshold = threshold;
                         }
 
-                        float radius = ppSettings.BloomRadius;
-                        if (ImGui.SliderFloat("Bloom Radius", ref radius, 1.0f, 20.0f))
+                        float knee = ppSettings.BloomSoftKnee;
+                        if (ImGui.SliderFloat("Soft Knee", ref knee, 0.0f, 1.0f))
                         {
-                            ppSettings.BloomRadius = radius;
+                            ppSettings.BloomSoftKnee = knee;
+                        }
+
+                        float diffusion = ppSettings.BloomDiffusion;
+                        if (ImGui.SliderFloat("Diffusion", ref diffusion, 1.0f, 10.0f))
+                        {
+                            ppSettings.BloomDiffusion = diffusion;
+                        }
+
+                        float scatter = ppSettings.BloomScatter;
+                        if (ImGui.SliderFloat("Scatter", ref scatter, 0.0f, 1.5f))
+                        {
+                            ppSettings.BloomScatter = scatter;
+                        }
+
+                        bool highQuality = ppSettings.BloomHighQuality;
+                        if (ImGui.Checkbox("High Quality Filtering", ref highQuality))
+                        {
+                            ppSettings.BloomHighQuality = highQuality;
                         }
                     }
 

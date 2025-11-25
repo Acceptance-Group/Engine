@@ -244,9 +244,14 @@ public class ViewportWindow
                 
                 if (_editor.PostProcessingSettings != null)
                 {
-                    if (_editor.MotionBlur != null)
+                    if (_editor.MotionBlur != null && _editor.PostProcessingSettings.MotionBlurEnabled)
                     {
-                        _editor.MotionBlur.SetActive(_editor.PostProcessingSettings.MotionBlurEnabled);
+                        _editor.MotionBlur.SetActive(true);
+                        _editor.MotionBlur.UpdateCameraData(_editor.Camera.ViewProjectionMatrix, 1.0f / 60.0f);
+                    }
+                    else if (_editor.MotionBlur != null)
+                    {
+                        _editor.MotionBlur.SetActive(false);
                     }
                     
                     uint currentTexture = finalTexture;

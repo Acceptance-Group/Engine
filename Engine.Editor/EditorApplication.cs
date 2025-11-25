@@ -251,7 +251,7 @@ float SampleShadowMapPCF(sampler2D shadowMap, vec2 coords, float currentDepth, f
         sampleCount = 16;
     }
     else if (uShadowQuality == 3)
-    {
+        {
         filterRadius = texelSize * 5.0;
         penumbraSize = texelSize * 6.0;
         sampleCount = 25;
@@ -326,7 +326,7 @@ float SampleShadowMapPCF(sampler2D shadowMap, vec2 coords, float currentDepth, f
             if (diff > 0.0)
             {
                 shadowFactor = 1.0 - smoothstep(0.0, penumbraSize, diff);
-            }
+        }
             
             shadowSum += shadowFactor * weight;
             totalWeight += weight;
@@ -427,9 +427,9 @@ float CalculateShadowCascaded(vec3 normal, vec3 lightDir)
             if (!uSoftShadows)
             {
                 shadow = SampleShadowMapHard(uShadowMap1, projCoords.xy, currentDepth);
-            }
-            else
-            {
+                }
+                else
+                {
                 shadow = SampleShadowMapPCF(uShadowMap1, projCoords.xy, currentDepth, texelSize);
             }
         }
@@ -449,15 +449,15 @@ float CalculateShadowCascaded(vec3 normal, vec3 lightDir)
             if (!uSoftShadows)
             {
                 shadow = SampleShadowMapHard(uShadowMap2, projCoords.xy, currentDepth);
-            }
-            else
-            {
+                }
+                else
+                {
                 shadow = SampleShadowMapPCF(uShadowMap2, projCoords.xy, currentDepth, texelSize);
             }
-        }
-    }
+                }
+            }
     else if (uCascadeCount > 3 && viewDepth < uCascadeDepth3)
-    {
+                {
         fragPosLightSpace = FragPosLightSpace3;
         vec4 offsetFragPos = fragPosLightSpace + vec4(normalOffset, 0.0);
         vec3 projCoords = offsetFragPos.xyz / offsetFragPos.w;
@@ -471,9 +471,9 @@ float CalculateShadowCascaded(vec3 normal, vec3 lightDir)
             if (!uSoftShadows)
             {
                 shadow = SampleShadowMapHard(uShadowMap3, projCoords.xy, currentDepth);
-            }
-            else
-            {
+                }
+                else
+                {
                 shadow = SampleShadowMapPCF(uShadowMap3, projCoords.xy, currentDepth, texelSize);
             }
         }
