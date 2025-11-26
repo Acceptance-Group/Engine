@@ -31,6 +31,7 @@ public class EditorApplication : IDisposable
     private InspectorWindow _inspector;
     private ViewportWindow _viewport;
     private SettingsWindow _settings;
+    private MaterialEditorWindow _materialEditor;
     private Shader? _defaultShader;
     private Skybox? _skybox;
     private ShadowRenderer? _shadowRenderer;
@@ -54,7 +55,7 @@ public class EditorApplication : IDisposable
     public EditorApplication()
     {
         var nativeWindowSettings = NativeWindowSettings.Default;
-        nativeWindowSettings.Size = new OpenTK.Mathematics.Vector2i(1920, 1080);
+        nativeWindowSettings.ClientSize = new OpenTK.Mathematics.Vector2i(1920, 1080);
         nativeWindowSettings.Title = "Engine Editor";
 
         _window = new GameWindow(GameWindowSettings.Default, nativeWindowSettings);
@@ -72,6 +73,7 @@ public class EditorApplication : IDisposable
         _inspector = new InspectorWindow(this);
         _viewport = new ViewportWindow(this);
         _settings = new SettingsWindow(this);
+        _materialEditor = new MaterialEditorWindow(this);
         
         _shadowSettings = new ShadowSettings();
         _directionalLight = new DirectionalLight();
@@ -666,6 +668,7 @@ void main()
         _console.Render();
         _profiler.Render();
         _settings.Render();
+        _materialEditor.Render();
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, _window.Size.X, _window.Size.Y);
@@ -781,9 +784,9 @@ void main()
 
             if (ImGui.BeginMenu("Tools"))
             {
-                if (ImGui.MenuItem("Material Editor"))
+                if (ImGui.MenuItem("Material Editor", "", _materialEditor.Visible))
                 {
-                    // Material editor will be shown
+                    _materialEditor.Visible = !_materialEditor.Visible;
                 }
                 ImGui.EndMenu();
             }
