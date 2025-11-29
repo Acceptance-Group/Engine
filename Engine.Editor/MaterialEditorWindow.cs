@@ -30,7 +30,7 @@ public class MaterialEditorWindow
         { "Math Functions", new[] { "Abs", "Floor", "Ceil", "Frac", "Sin", "Cos" } },
         { "Utility", new[] { "Mask", "Clamp", "Time", "Delta Time", "Panner", "Hue Shift", "Rotator" } },
         { "Conversion", new[] { "To Vector 3", "To Vector 4", "From Vector 3", "From Vector 4", "To Scalar", "To Vector 2" } },
-        { "Material", new[] { "Material Attributes", "Material Output" } }
+        { "Material", new[] { "Material Output" } }
     };
     private static readonly System.Numerics.Vector4 NodeColorTexCoord = new System.Numerics.Vector4(0.74f, 0.18f, 0.12f, 1f);
     private static readonly System.Numerics.Vector4 NodeColorTexture = new System.Numerics.Vector4(0.1f, 0.42f, 0.66f, 1f);

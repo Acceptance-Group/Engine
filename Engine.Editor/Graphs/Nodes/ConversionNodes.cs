@@ -22,9 +22,9 @@ public class ToVector3Node : GraphNode
         if (outputIndex >= OutputPins.Count)
             return null;
             
-        float? x = context.GetInputValue<float>(Id, 0);
-        float? y = context.GetInputValue<float>(Id, 1);
-        float? z = context.GetInputValue<float>(Id, 2);
+            float? x = context.GetInputValue<float>(Id, 0);
+            float? y = context.GetInputValue<float>(Id, 1);
+            float? z = context.GetInputValue<float>(Id, 2);
         EngineVec4 result = new EngineVec4(x ?? 0f, y ?? 0f, z ?? 0f, 1.0f);
         
         var pin = OutputPins[outputIndex];
@@ -63,10 +63,10 @@ public class ToVector4Node : GraphNode
         if (outputIndex >= OutputPins.Count)
             return null;
             
-        float? x = context.GetInputValue<float>(Id, 0);
-        float? y = context.GetInputValue<float>(Id, 1);
-        float? z = context.GetInputValue<float>(Id, 2);
-        float? w = context.GetInputValue<float>(Id, 3);
+            float? x = context.GetInputValue<float>(Id, 0);
+            float? y = context.GetInputValue<float>(Id, 1);
+            float? z = context.GetInputValue<float>(Id, 2);
+            float? w = context.GetInputValue<float>(Id, 3);
         EngineVec4 result = new EngineVec4(x ?? 0f, y ?? 0f, z ?? 0f, w ?? 0f);
         
         var pin = OutputPins[outputIndex];
@@ -200,19 +200,19 @@ public class ToScalarNode : GraphNode
         if (outputIndex >= OutputPins.Count)
             return null;
 
-        EngineVec4? inputNullable = context.GetInputValue<EngineVec4>(Id, 0);
-        if (inputNullable.HasValue)
-        {
-            return Component switch
+            EngineVec4? inputNullable = context.GetInputValue<EngineVec4>(Id, 0);
+            if (inputNullable.HasValue)
             {
-                0 => inputNullable.Value.X,
-                1 => inputNullable.Value.Y,
-                2 => inputNullable.Value.Z,
-                3 => inputNullable.Value.W,
-                _ => 0.0f
-            };
-        }
-        return 0.5f;
+                return Component switch
+                {
+                    0 => inputNullable.Value.X,
+                    1 => inputNullable.Value.Y,
+                    2 => inputNullable.Value.Z,
+                    3 => inputNullable.Value.W,
+                    _ => 0.0f
+                };
+            }
+            return 0.5f;
     }
 
     public override void DrawInspector()
@@ -246,15 +246,15 @@ public class ToVector2Node : GraphNode
         if (outputIndex >= OutputPins.Count)
             return null;
 
-        EngineVec4? inputNullable = context.GetInputValue<EngineVec4>(Id, 0);
-        if (inputNullable.HasValue)
-        {
-            float[] components = { inputNullable.Value.X, inputNullable.Value.Y, inputNullable.Value.Z, inputNullable.Value.W };
-            float x = SwizzleX >= 0 && SwizzleX < 4 ? components[SwizzleX] : 0.0f;
-            float y = SwizzleY >= 0 && SwizzleY < 4 ? components[SwizzleY] : 0.0f;
-            return new EngineVec2(x, y);
-        }
-        return new EngineVec2(0.5f, 0.5f);
+            EngineVec4? inputNullable = context.GetInputValue<EngineVec4>(Id, 0);
+            if (inputNullable.HasValue)
+            {
+                float[] components = { inputNullable.Value.X, inputNullable.Value.Y, inputNullable.Value.Z, inputNullable.Value.W };
+                float x = SwizzleX >= 0 && SwizzleX < 4 ? components[SwizzleX] : 0.0f;
+                float y = SwizzleY >= 0 && SwizzleY < 4 ? components[SwizzleY] : 0.0f;
+                return new EngineVec2(x, y);
+            }
+            return new EngineVec2(0.5f, 0.5f);
     }
 
     public override void DrawInspector()

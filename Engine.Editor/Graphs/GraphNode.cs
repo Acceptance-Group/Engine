@@ -48,7 +48,7 @@ public abstract class GraphNode
             }
         }
     }
-    
+
     protected GraphNode(int id, string title, string? subtitle, Vector2 position, Vector2 size, Vector4 headerColor, IEnumerable<(string label, NodeValueKind kind)> inputs, IEnumerable<(string label, NodeValueKind kind)> outputs)
     {
         Id = id;

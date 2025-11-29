@@ -35,7 +35,7 @@ public class Vector3Node : GraphNode
             };
         }
         
-        return new EngineVec4(Color.X, Color.Y, Color.Z, 1.0f);
+            return new EngineVec4(Color.X, Color.Y, Color.Z, 1.0f);
     }
 
     public override void DrawInspector()

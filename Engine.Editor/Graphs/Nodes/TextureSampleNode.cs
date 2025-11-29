@@ -36,8 +36,8 @@ public class TextureSampleNode : GraphNode
         if (outputIndex >= OutputPins.Count)
             return null;
 
-        EngineVec2? uvNullable = context.GetInputValue<EngineVec2>(Id, 0);
-        EngineVec2 uv = uvNullable.HasValue ? uvNullable.Value : new EngineVec2(0.5f, 0.5f);
+            EngineVec2? uvNullable = context.GetInputValue<EngineVec2>(Id, 0);
+            EngineVec2 uv = uvNullable.HasValue ? uvNullable.Value : new EngineVec2(0.5f, 0.5f);
         EngineVec4 sampled = SampleTextureBilinear(uv);
         EngineVec4 colorMultiplier = GetColorMultiplier(context);
         EngineVec4 tinted = new EngineVec4(
@@ -114,7 +114,7 @@ public class TextureSampleNode : GraphNode
             return _cachedTexture.Pixels[index];
         }
         return new EngineVec4(0.5f, 0.5f, 0.5f, 1.0f);
-    }
+        }
 
     private bool TryEnsureTextureLoaded()
     {
@@ -209,7 +209,7 @@ public class TextureSampleNode : GraphNode
         {
             int nullIndex = Array.IndexOf<byte>(buffer, 0);
             if (nullIndex >= 0)
-            {
+        {
                 TexturePath = System.Text.Encoding.UTF8.GetString(buffer, 0, nullIndex).Trim();
                 if (string.IsNullOrWhiteSpace(TexturePath))
                     TexturePath = null;
@@ -218,7 +218,7 @@ public class TextureSampleNode : GraphNode
             {
                 TexturePath = System.Text.Encoding.UTF8.GetString(buffer).Trim();
                 if (string.IsNullOrWhiteSpace(TexturePath))
-                    TexturePath = null;
+                TexturePath = null;
             }
             InvalidateCachedTexture();
         }
@@ -233,5 +233,5 @@ public class TextureSampleNode : GraphNode
         }
 
         ImGui.Spacing();
+        }
     }
-}
