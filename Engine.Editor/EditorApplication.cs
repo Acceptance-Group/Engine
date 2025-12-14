@@ -1211,7 +1211,8 @@ void main()
 
     private void ApplyVSync()
     {
-        _window.VSync = _vSyncEnabled ? VSyncMode.On : VSyncMode.Off;
+        if (_window != null)
+            _window.VSync = _vSyncEnabled ? VSyncMode.On : VSyncMode.Off;
     }
 
     public void Dispose()

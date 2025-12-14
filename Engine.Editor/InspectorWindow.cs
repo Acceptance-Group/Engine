@@ -206,18 +206,29 @@ public class InspectorWindow
                 transform.Position = new Vector3(position.X, position.Y, position.Z);
             }
 
-            if (!_lastEulerAngles.HasValue)
+            Vector3 currentEuler = transform.EulerAngles;
+            System.Numerics.Vector3 currentEulerDegrees = new System.Numerics.Vector3(
+                currentEuler.X * 180.0f / MathF.PI,
+                currentEuler.Y * 180.0f / MathF.PI,
+                currentEuler.Z * 180.0f / MathF.PI
+            );
+            
+            if (!_lastEulerAngles.HasValue || _lastSelectedObject != _editor.SelectedObject)
             {
-                Vector3 currentEuler = transform.EulerAngles;
-                _lastEulerAngles = new System.Numerics.Vector3(
-                    currentEuler.X * 180.0f / MathF.PI,
-                    currentEuler.Y * 180.0f / MathF.PI,
-                    currentEuler.Z * 180.0f / MathF.PI
-                );
+                _lastEulerAngles = currentEulerDegrees;
             }
             
             System.Numerics.Vector3 euler = _lastEulerAngles.Value;
             System.Numerics.Vector3 lastEuler = _lastEulerAngles.Value;
+            
+            if (MathF.Abs(euler.X - currentEulerDegrees.X) > 0.1f || 
+                MathF.Abs(euler.Y - currentEulerDegrees.Y) > 0.1f || 
+                MathF.Abs(euler.Z - currentEulerDegrees.Z) > 0.1f)
+            {
+                _lastEulerAngles = currentEulerDegrees;
+                euler = currentEulerDegrees;
+                lastEuler = currentEulerDegrees;
+            }
             
             if (ImGui.DragFloat3("Rotation", ref euler, 1.0f))
             {

@@ -138,12 +138,6 @@ void main()
         GL.BindVertexArray(_vao);
         GL.DrawArrays(PrimitiveType.Triangles, 0, 36);
         
-        ErrorCode error = GL.GetError();
-        if (error != ErrorCode.NoError)
-        {
-            Logger.Error($"Skybox: OpenGL error after DrawArrays: {error}");
-        }
-        
         GL.BindVertexArray(0);
         
         GL.DepthMask(true);

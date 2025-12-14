@@ -14,6 +14,7 @@ public class Mesh : Disposable
     private readonly int _vertexCount;
 
     public VertexArray VertexArray => _vertexArray;
+    public IndexBuffer? IndexBuffer => _indexBuffer;
     public int IndexCount => _indexCount;
     public int VertexCount => _vertexCount;
 
