@@ -284,6 +284,35 @@ public class SettingsWindow
                             ppSettings.VignetteSmoothness = smoothness;
                         }
                     }
+
+                    ImGui.Separator();
+
+                    bool ssao = ppSettings.SSAOEnabled;
+                    if (ImGui.Checkbox("SSAO", ref ssao))
+                    {
+                        ppSettings.SSAOEnabled = ssao;
+                    }
+
+                    if (ssao)
+                    {
+                        float ssaoRadius = ppSettings.SSAORadius;
+                        if (ImGui.SliderFloat("SSAO Radius", ref ssaoRadius, 0.5f, 16.0f))
+                        {
+                            ppSettings.SSAORadius = ssaoRadius;
+                        }
+
+                        float ssaoBias = ppSettings.SSAOBias;
+                        if (ImGui.SliderFloat("SSAO Bias", ref ssaoBias, 0.001f, 0.05f))
+                        {
+                            ppSettings.SSAOBias = ssaoBias;
+                        }
+
+                        float ssaoPower = ppSettings.SSAOPower;
+                        if (ImGui.SliderFloat("SSAO Power", ref ssaoPower, 0.5f, 3.0f))
+                        {
+                            ppSettings.SSAOPower = ssaoPower;
+                        }
+                    }
                 }
             }
         }

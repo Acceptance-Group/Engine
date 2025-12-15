@@ -47,6 +47,7 @@ public class EditorApplication : IDisposable
     private MotionBlur? _motionBlur;
     private Bloom? _bloom;
     private Vignette? _vignette;
+    private SSAO? _ssao;
     private bool _showPhysicsDebug = false;
     private bool _isPhysicsSimulating = false;
     private bool _isRunning = false;
@@ -138,6 +139,7 @@ public class EditorApplication : IDisposable
         _motionBlur = new MotionBlur(1920, 1080, _postProcessingSettings);
         _bloom = new Bloom(1920, 1080, _postProcessingSettings);
         _vignette = new Vignette(1920, 1080, _postProcessingSettings);
+        _ssao = new SSAO(1920, 1080, _postProcessingSettings);
     }
 
     private void CreateDefaultShader()
@@ -207,6 +209,7 @@ uniform vec2 uUVOffset;
 uniform float uMetallic;
 uniform float uSpecular;
 uniform float uRoughness;
+uniform vec4 uEmission;
 uniform sampler2D uShadowMap;
 uniform sampler2D uShadowMap0;
 uniform sampler2D uShadowMap1;
@@ -271,7 +274,7 @@ float SampleShadowMapPCF(sampler2D shadowMap, vec2 coords, float currentDepth, f
         sampleCount = 16;
     }
     else if (uShadowQuality == 3)
-        {
+    {
         filterRadius = texelSize * 5.0;
         penumbraSize = texelSize * 6.0;
         sampleCount = 25;
@@ -346,7 +349,7 @@ float SampleShadowMapPCF(sampler2D shadowMap, vec2 coords, float currentDepth, f
             if (diff > 0.0)
             {
                 shadowFactor = 1.0 - smoothstep(0.0, penumbraSize, diff);
-        }
+            }
             
             shadowSum += shadowFactor * weight;
             totalWeight += weight;
@@ -361,12 +364,12 @@ float SampleShadowMapPCF(sampler2D shadowMap, vec2 coords, float currentDepth, f
     return totalWeight > 0.0 ? shadowSum / totalWeight : 1.0;
 }
 
-float CalculateShadowSingle(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
+float CalculateShadowSingle(vec3 normal, vec3 lightDir)
 {
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    
-    vec3 normalOffset = normal * uNormalBias * 0.001;
-    vec4 offsetFragPos = fragPosLightSpace + vec4(normalOffset, 0.0);
+    float texelSize = 1.0 / float(textureSize(uShadowMap, 0).x);
+    float normalOffsetScale = uNormalBias * max(0.001, texelSize * 2.0);
+    vec3 offsetPos = FragPos + normal * normalOffsetScale;
+    vec4 offsetFragPos = uLightSpaceMatrix * vec4(offsetPos, 1.0);
     vec3 offsetProjCoords = offsetFragPos.xyz / offsetFragPos.w;
     offsetProjCoords = offsetProjCoords * 0.5 + 0.5;
     
@@ -376,11 +379,8 @@ float CalculateShadowSingle(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
     float NdotL = dot(normal, lightDir);
     float minBias = 0.001;
     float slopeBias = 0.003 * tan(acos(clamp(NdotL, 0.0, 1.0)));
-    slopeBias = clamp(slopeBias, 0.0, 0.015);
-    float bias = max(max(slopeBias, uShadowBias), minBias);
-    
-    float texelSize = 1.0 / float(textureSize(uShadowMap, 0).x);
-    bias += texelSize * 1.5;
+    slopeBias = clamp(slopeBias, 0.0, 0.02);
+    float bias = max(max(slopeBias, uShadowBias), minBias) + texelSize * 1.5;
     
     float currentDepth = offsetProjCoords.z - bias;
     
@@ -397,7 +397,7 @@ float CalculateShadowCascaded(vec3 normal, vec3 lightDir)
     float NdotL = dot(normal, lightDir);
     float minBias = 0.001;
     float slopeBias = 0.003 * tan(acos(clamp(NdotL, 0.0, 1.0)));
-    slopeBias = clamp(slopeBias, 0.0, 0.015);
+    slopeBias = clamp(slopeBias, 0.0, 0.02);
     float bias = max(max(slopeBias, uShadowBias), minBias);
     
     float viewDepth = FragDepth;
@@ -405,21 +405,21 @@ float CalculateShadowCascaded(vec3 normal, vec3 lightDir)
     if (viewDepth < 0.0)
         return 1.0;
     
-    vec3 normalOffset = normal * uNormalBias * 0.0015;
-    vec4 fragPosLightSpace;
     float texelSize;
     float shadow = 1.0;
+    float shadowCurrent;
+    float shadowPrev;
     
     if (viewDepth < uCascadeDepth0)
     {
-        fragPosLightSpace = FragPosLightSpace0;
-        vec4 offsetFragPos = fragPosLightSpace + vec4(normalOffset, 0.0);
+        texelSize = 1.0 / float(textureSize(uShadowMap0, 0).x);
+        float normalOffsetScale = uNormalBias * max(0.001, texelSize * 2.0);
+        vec4 offsetFragPos = uLightSpaceMatrix0 * vec4(FragPos + normal * normalOffsetScale, 1.0);
         vec3 projCoords = offsetFragPos.xyz / offsetFragPos.w;
         projCoords = projCoords * 0.5 + 0.5;
         
         if (projCoords.z <= 1.0 && projCoords.x >= 0.0 && projCoords.x <= 1.0 && projCoords.y >= 0.0 && projCoords.y <= 1.0)
         {
-            texelSize = 1.0 / float(textureSize(uShadowMap0, 0).x);
             float cascadeBias = bias + texelSize * 1.5;
             float currentDepth = projCoords.z - cascadeBias;
             if (!uSoftShadows)
@@ -434,67 +434,172 @@ float CalculateShadowCascaded(vec3 normal, vec3 lightDir)
     }
     else if (uCascadeCount > 1 && viewDepth < uCascadeDepth1)
     {
-        fragPosLightSpace = FragPosLightSpace1;
-        vec4 offsetFragPos = fragPosLightSpace + vec4(normalOffset, 0.0);
+        texelSize = 1.0 / float(textureSize(uShadowMap1, 0).x);
+        float normalOffsetScale = uNormalBias * max(0.001, texelSize * 2.0);
+        vec4 offsetFragPos = uLightSpaceMatrix1 * vec4(FragPos + normal * normalOffsetScale, 1.0);
         vec3 projCoords = offsetFragPos.xyz / offsetFragPos.w;
         projCoords = projCoords * 0.5 + 0.5;
         
         if (projCoords.z <= 1.0 && projCoords.x >= 0.0 && projCoords.x <= 1.0 && projCoords.y >= 0.0 && projCoords.y <= 1.0)
         {
-            texelSize = 1.0 / float(textureSize(uShadowMap1, 0).x);
             float cascadeBias = bias + texelSize * 1.0;
             float currentDepth = projCoords.z - cascadeBias;
             if (!uSoftShadows)
             {
-                shadow = SampleShadowMapHard(uShadowMap1, projCoords.xy, currentDepth);
+                shadowCurrent = SampleShadowMapHard(uShadowMap1, projCoords.xy, currentDepth);
+            }
+            else
+            {
+                shadowCurrent = SampleShadowMapPCF(uShadowMap1, projCoords.xy, currentDepth, texelSize);
+            }
+            
+            float blendRange = (uCascadeDepth1 - uCascadeDepth0) * uCascadeBlendArea;
+            if (blendRange > 0.0 && viewDepth < uCascadeDepth0 + blendRange)
+            {
+                float texelSize0 = 1.0 / float(textureSize(uShadowMap0, 0).x);
+                float normalOffsetScale0 = uNormalBias * max(0.001, texelSize0 * 2.0);
+                vec4 offsetFragPos0 = uLightSpaceMatrix0 * vec4(FragPos + normal * normalOffsetScale0, 1.0);
+                vec3 projCoords0 = offsetFragPos0.xyz / offsetFragPos0.w;
+                projCoords0 = projCoords0 * 0.5 + 0.5;
+                
+                if (projCoords0.z <= 1.0 && projCoords0.x >= 0.0 && projCoords0.x <= 1.0 && projCoords0.y >= 0.0 && projCoords0.y <= 1.0)
+                {
+                    float cascadeBias0 = bias + texelSize0 * 1.5;
+                    float currentDepth0 = projCoords0.z - cascadeBias0;
+                    if (!uSoftShadows)
+                    {
+                        shadowPrev = SampleShadowMapHard(uShadowMap0, projCoords0.xy, currentDepth0);
+                    }
+                    else
+                    {
+                        shadowPrev = SampleShadowMapPCF(uShadowMap0, projCoords0.xy, currentDepth0, texelSize0);
+                    }
+                    
+                    float t = clamp((viewDepth - uCascadeDepth0) / blendRange, 0.0, 1.0);
+                    shadow = mix(shadowPrev, shadowCurrent, t);
                 }
                 else
                 {
-                shadow = SampleShadowMapPCF(uShadowMap1, projCoords.xy, currentDepth, texelSize);
+                    shadow = shadowCurrent;
+                }
+            }
+            else
+            {
+                shadow = shadowCurrent;
             }
         }
     }
     else if (uCascadeCount > 2 && viewDepth < uCascadeDepth2)
     {
-        fragPosLightSpace = FragPosLightSpace2;
-        vec4 offsetFragPos = fragPosLightSpace + vec4(normalOffset, 0.0);
+        texelSize = 1.0 / float(textureSize(uShadowMap2, 0).x);
+        float normalOffsetScale = uNormalBias * max(0.001, texelSize * 2.0);
+        vec4 offsetFragPos = uLightSpaceMatrix2 * vec4(FragPos + normal * normalOffsetScale, 1.0);
         vec3 projCoords = offsetFragPos.xyz / offsetFragPos.w;
         projCoords = projCoords * 0.5 + 0.5;
         
         if (projCoords.z <= 1.0 && projCoords.x >= 0.0 && projCoords.x <= 1.0 && projCoords.y >= 0.0 && projCoords.y <= 1.0)
         {
-            texelSize = 1.0 / float(textureSize(uShadowMap2, 0).x);
             float cascadeBias = bias + texelSize * 1.0;
             float currentDepth = projCoords.z - cascadeBias;
             if (!uSoftShadows)
             {
-                shadow = SampleShadowMapHard(uShadowMap2, projCoords.xy, currentDepth);
+                shadowCurrent = SampleShadowMapHard(uShadowMap2, projCoords.xy, currentDepth);
+            }
+            else
+            {
+                shadowCurrent = SampleShadowMapPCF(uShadowMap2, projCoords.xy, currentDepth, texelSize);
+            }
+            
+            float blendRange = (uCascadeDepth2 - uCascadeDepth1) * uCascadeBlendArea;
+            if (blendRange > 0.0 && viewDepth < uCascadeDepth1 + blendRange)
+            {
+                float texelSize1 = 1.0 / float(textureSize(uShadowMap1, 0).x);
+                float normalOffsetScale1 = uNormalBias * max(0.001, texelSize1 * 2.0);
+                vec4 offsetFragPos1 = uLightSpaceMatrix1 * vec4(FragPos + normal * normalOffsetScale1, 1.0);
+                vec3 projCoords1 = offsetFragPos1.xyz / offsetFragPos1.w;
+                projCoords1 = projCoords1 * 0.5 + 0.5;
+                
+                if (projCoords1.z <= 1.0 && projCoords1.x >= 0.0 && projCoords1.x <= 1.0 && projCoords1.y >= 0.0 && projCoords1.y <= 1.0)
+                {
+                    float cascadeBias1 = bias + texelSize1 * 1.0;
+                    float currentDepth1 = projCoords1.z - cascadeBias1;
+                    if (!uSoftShadows)
+                    {
+                        shadowPrev = SampleShadowMapHard(uShadowMap1, projCoords1.xy, currentDepth1);
+                    }
+                    else
+                    {
+                        shadowPrev = SampleShadowMapPCF(uShadowMap1, projCoords1.xy, currentDepth1, texelSize1);
+                    }
+                    
+                    float t = clamp((viewDepth - uCascadeDepth1) / blendRange, 0.0, 1.0);
+                    shadow = mix(shadowPrev, shadowCurrent, t);
                 }
                 else
                 {
-                shadow = SampleShadowMapPCF(uShadowMap2, projCoords.xy, currentDepth, texelSize);
-            }
+                    shadow = shadowCurrent;
                 }
             }
+            else
+            {
+                shadow = shadowCurrent;
+            }
+        }
+    }
     else if (uCascadeCount > 3 && viewDepth < uCascadeDepth3)
-                {
-        fragPosLightSpace = FragPosLightSpace3;
-        vec4 offsetFragPos = fragPosLightSpace + vec4(normalOffset, 0.0);
+    {
+        texelSize = 1.0 / float(textureSize(uShadowMap3, 0).x);
+        float normalOffsetScale = uNormalBias * max(0.001, texelSize * 2.0);
+        vec4 offsetFragPos = uLightSpaceMatrix3 * vec4(FragPos + normal * normalOffsetScale, 1.0);
         vec3 projCoords = offsetFragPos.xyz / offsetFragPos.w;
         projCoords = projCoords * 0.5 + 0.5;
         
         if (projCoords.z <= 1.0 && projCoords.x >= 0.0 && projCoords.x <= 1.0 && projCoords.y >= 0.0 && projCoords.y <= 1.0)
         {
-            texelSize = 1.0 / float(textureSize(uShadowMap3, 0).x);
             float cascadeBias = bias + texelSize * 1.0;
             float currentDepth = projCoords.z - cascadeBias;
             if (!uSoftShadows)
             {
-                shadow = SampleShadowMapHard(uShadowMap3, projCoords.xy, currentDepth);
+                shadowCurrent = SampleShadowMapHard(uShadowMap3, projCoords.xy, currentDepth);
+            }
+            else
+            {
+                shadowCurrent = SampleShadowMapPCF(uShadowMap3, projCoords.xy, currentDepth, texelSize);
+            }
+            
+            float blendRange = (uCascadeDepth3 - uCascadeDepth2) * uCascadeBlendArea;
+            if (blendRange > 0.0 && viewDepth < uCascadeDepth2 + blendRange)
+            {
+                float texelSize2 = 1.0 / float(textureSize(uShadowMap2, 0).x);
+                float normalOffsetScale2 = uNormalBias * max(0.001, texelSize2 * 2.0);
+                vec4 offsetFragPos2 = uLightSpaceMatrix2 * vec4(FragPos + normal * normalOffsetScale2, 1.0);
+                vec3 projCoords2 = offsetFragPos2.xyz / offsetFragPos2.w;
+                projCoords2 = projCoords2 * 0.5 + 0.5;
+                
+                if (projCoords2.z <= 1.0 && projCoords2.x >= 0.0 && projCoords2.x <= 1.0 && projCoords2.y >= 0.0 && projCoords2.y <= 1.0)
+                {
+                    float cascadeBias2 = bias + texelSize2 * 1.0;
+                    float currentDepth2 = projCoords2.z - cascadeBias2;
+                    if (!uSoftShadows)
+                    {
+                        shadowPrev = SampleShadowMapHard(uShadowMap2, projCoords2.xy, currentDepth2);
+                    }
+                    else
+                    {
+                        shadowPrev = SampleShadowMapPCF(uShadowMap2, projCoords2.xy, currentDepth2, texelSize2);
+                    }
+                    
+                    float t = clamp((viewDepth - uCascadeDepth2) / blendRange, 0.0, 1.0);
+                    shadow = mix(shadowPrev, shadowCurrent, t);
                 }
                 else
                 {
-                shadow = SampleShadowMapPCF(uShadowMap3, projCoords.xy, currentDepth, texelSize);
+                    shadow = shadowCurrent;
+                }
+            }
+            else
+            {
+                shadow = shadowCurrent;
             }
         }
     }
@@ -502,7 +607,7 @@ float CalculateShadowCascaded(vec3 normal, vec3 lightDir)
     return shadow;
 }
 
-float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal)
+float ShadowCalculation(vec3 normal)
 {
     if (!uUseShadows)
         return 1.0;
@@ -512,7 +617,7 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal)
     float shadow = 1.0;
     if (!uUseCascadedShadows)
     {
-        shadow = CalculateShadowSingle(fragPosLightSpace, normal, lightDir);
+        shadow = CalculateShadowSingle(normal, lightDir);
     }
     else
     {
@@ -535,31 +640,40 @@ void main()
     vec3 viewDir = normalize(-FragPos);
     vec3 normal = normalize(Normal);
     
-    float NdotL = max(dot(normal, lightDir), 0.0);
-    float diff = mix(0.2, 1.0, NdotL);
-    
-    vec3 reflectDir = reflect(-lightDir, normal);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), (1.0 - uRoughness) * 128.0 + 8.0);
-    spec *= uSpecular;
-    
     vec3 albedo = color.rgb * (1.0 - uMetallic);
     vec3 metallic = color.rgb * uMetallic;
+    vec3 emission = uEmission.rgb;
     
-    color.rgb = albedo * diff + metallic * spec * uSpecular;
+    float NdotL = max(dot(normal, lightDir), 0.0);
     
-    if (uUseShadows)
+    vec3 ambient = albedo * 0.2;
+    vec3 direct = vec3(0.0);
+    
+    if (NdotL > 0.0)
     {
-        vec4 fragPosLightSpace = uLightSpaceMatrix * vec4(FragPos, 1.0);
-        float shadow = ShadowCalculation(fragPosLightSpace, normal);
-        color.rgb *= shadow;
+        float diff = NdotL;
+        
+        vec3 reflectDir = reflect(-lightDir, normal);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), (1.0 - uRoughness) * 128.0 + 8.0);
+        spec *= uSpecular;
+        
+        float shadow = 1.0;
+        if (uUseShadows)
+        {
+            shadow = ShadowCalculation(normal);
+        }
+        
+        direct = (albedo * diff + metallic * spec * uSpecular) * shadow;
     }
     
+    color.rgb = ambient + direct + emission;
     FragColor = color;
 }";
 
         _defaultShader = new Shader(vertexShader, fragmentShader);
         _defaultShader.SetVector2("uUVScale", Engine.Math.Vector2.One);
         _defaultShader.SetVector2("uUVOffset", Engine.Math.Vector2.Zero);
+        _defaultShader.SetVector4("uEmission", Engine.Math.Vector4.Zero);
     }
 
     private void CreateDefaultScene()
@@ -1047,6 +1161,7 @@ void main()
     public MotionBlur? MotionBlur => _motionBlur;
     public Bloom? Bloom => _bloom;
     public Vignette? Vignette => _vignette;
+    public SSAO? SSAO => _ssao;
     public bool ShowPhysicsDebug
     {
         get => _showPhysicsDebug;
@@ -1225,6 +1340,7 @@ void main()
         _motionBlur?.Dispose();
         _bloom?.Dispose();
         _vignette?.Dispose();
+        _ssao?.Dispose();
         _imguiController?.Dispose();
         _window?.Dispose();
     }

@@ -387,6 +387,7 @@ public class MaterialEditorWindow
                 _editor.DefaultShader.SetFloat("uMetallic", materialData.Metallic);
                 _editor.DefaultShader.SetFloat("uSpecular", materialData.Specular);
                 _editor.DefaultShader.SetFloat("uRoughness", materialData.Roughness);
+                _editor.DefaultShader.SetVector4("uEmission", materialData.EmissionColor);
             }
             else
             {
@@ -394,6 +395,7 @@ public class MaterialEditorWindow
                 _editor.DefaultShader.SetFloat("uMetallic", 0.0f);
                 _editor.DefaultShader.SetFloat("uSpecular", 0.5f);
                 _editor.DefaultShader.SetFloat("uRoughness", 0.5f);
+                _editor.DefaultShader.SetVector4("uEmission", EngineVec4.Zero);
             }
             
             _previewSphere.Draw();
@@ -416,6 +418,7 @@ public class MaterialEditorWindow
                 _editor.DefaultShader.SetFloat("uMetallic", 0.0f);
                 _editor.DefaultShader.SetFloat("uSpecular", 0.5f);
                 _editor.DefaultShader.SetFloat("uRoughness", 0.5f);
+                _editor.DefaultShader.SetVector4("uEmission", EngineVec4.Zero);
             }
 
             uint finalTexture = _previewTexture;
@@ -2137,6 +2140,15 @@ public class MaterialEditorWindow
             if (roughness.HasValue)
             {
                 materialData.Roughness = System.Math.Clamp(roughness.Value, 0f, 1f);
+            }
+        }
+
+        if (materialOutput.InputPins.Count > 6)
+        {
+            EngineVec4? emission = GetInputValue<EngineVec4>(materialOutput, 6, context);
+            if (emission.HasValue)
+            {
+                materialData.EmissionColor = emission.Value;
             }
         }
 

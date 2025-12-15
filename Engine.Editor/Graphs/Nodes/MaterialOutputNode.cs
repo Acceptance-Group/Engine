@@ -16,7 +16,8 @@ public class MaterialOutputNode : GraphNode
                 ("Specular", NodeValueKind.Scalar),
                 ("Roughness", NodeValueKind.Scalar),
                 ("Normal", NodeValueKind.Normal),
-                ("Ambient Occlusion", NodeValueKind.Scalar)
+                ("Ambient Occlusion", NodeValueKind.Scalar),
+                ("Emission", NodeValueKind.Emission)
             },
             outputs: Array.Empty<(string, NodeValueKind)>())
     {

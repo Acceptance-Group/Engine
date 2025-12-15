@@ -20,6 +20,11 @@ public class PostProcessingSettings
     public float VignetteIntensity { get; set; } = 0.5f;
     public float VignetteRadius { get; set; } = 0.75f;
     public float VignetteSmoothness { get; set; } = 0.5f;
+
+    public bool SSAOEnabled { get; set; } = false;
+    public float SSAORadius { get; set; } = 2.0f;
+    public float SSAOBias { get; set; } = 0.01f;
+    public float SSAOPower { get; set; } = 1.5f;
 }
 
 

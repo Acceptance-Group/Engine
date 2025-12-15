@@ -26,7 +26,7 @@ public class ViewportWindow
     private readonly EditorApplication _editor;
     private uint _framebuffer;
     private uint _texture;
-    private uint _renderbuffer;
+    private uint _depthTexture;
     private uint _msaaFramebuffer;
     private uint _msaaColorRenderbuffer;
     private uint _msaaDepthRenderbuffer;
@@ -140,10 +140,14 @@ public class ViewportWindow
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _texture, 0);
 
-        _renderbuffer = (uint)GL.GenRenderbuffer();
-        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _renderbuffer);
-        GL.RenderbufferStorage(RenderbufferTarget.Renderbuffer, RenderbufferStorage.Depth24Stencil8, _width, _height);
-        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, _renderbuffer);
+        _depthTexture = (uint)GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, _depthTexture);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.DepthComponent24, _width, _height, 0, OpenTK.Graphics.OpenGL4.PixelFormat.DepthComponent, PixelType.Float, IntPtr.Zero);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, _depthTexture, 0);
 
         var status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
         if (status != FramebufferErrorCode.FramebufferComplete)
@@ -233,10 +237,9 @@ public class ViewportWindow
                 GL.Enable(EnableCap.DepthTest);
                 GL.DepthFunc(DepthFunction.Less);
                 GL.Disable(EnableCap.Blend);
-                if (!Engine.Core.System.IsMacOS())
-                {
-                    GL.Disable(EnableCap.CullFace);
-                }
+                
+                GL.Enable(EnableCap.CullFace);
+                GL.CullFace(CullFaceMode.Back);
 
                 if (_editor.Skybox != null)
                 {
@@ -416,6 +419,15 @@ public class ViewportWindow
                 
                 if (_editor.PostProcessingSettings != null)
                 {
+                    if (_editor.MotionBlur != null)
+                    {
+                        _editor.MotionBlur.SetDepthTexture(_depthTexture);
+                    }
+                    if (_editor.SSAO != null)
+                    {
+                        _editor.SSAO.SetDepthTexture(_depthTexture);
+                        _editor.SSAO.UpdateCameraData(_editor.Camera.ProjectionMatrix);
+                    }
                     if (_editor.MotionBlur != null && _editor.PostProcessingSettings.MotionBlurEnabled)
                     {
                         _editor.MotionBlur.SetActive(true);
@@ -427,7 +439,14 @@ public class ViewportWindow
                     }
                     
                     uint currentTexture = finalTexture;
-                    
+
+                    if (_editor.PostProcessingSettings.SSAOEnabled && _editor.SSAO != null)
+                    {
+                        _editor.SSAO.Resize(_width, _height);
+                        _editor.SSAO.Apply(currentTexture, 0, _width, _height);
+                        currentTexture = _editor.SSAO.Texture;
+                    }
+
                     if (_editor.PostProcessingSettings.BloomEnabled && _editor.Bloom != null)
                     {
                         _editor.Bloom.Resize(_width, _height);
@@ -915,32 +934,12 @@ public class ViewportWindow
             _msaaDepthRenderbuffer = 0;
         }
         
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
-        
         GL.DeleteTexture(_texture);
-        GL.DeleteRenderbuffer(_renderbuffer);
-
-        _texture = (uint)GL.GenTexture();
-        GL.BindTexture(TextureTarget.Texture2D, _texture);
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, _width, _height, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
-        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _texture, 0);
-
-        _renderbuffer = (uint)GL.GenRenderbuffer();
-        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _renderbuffer);
-        GL.RenderbufferStorage(RenderbufferTarget.Renderbuffer, RenderbufferStorage.Depth24Stencil8, _width, _height);
-        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, _renderbuffer);
-
-        var status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
-        if (status != FramebufferErrorCode.FramebufferComplete)
-        {
-            Logger.Error($"Framebuffer resize failed! Status: {status}");
-        }
-        
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        GL.DeleteTexture(_depthTexture);
+        GL.DeleteFramebuffer(_framebuffer);
+        _framebuffer = 0;
+        _texture = 0;
+        _depthTexture = 0;
         CreateFramebuffer();
     }
 }

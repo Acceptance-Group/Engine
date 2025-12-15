@@ -84,7 +84,9 @@ void main()
         
         GL.Enable(EnableCap.DepthTest);
         GL.DepthFunc(DepthFunction.Less);
-        GL.CullFace(CullFaceMode.Front);
+        GL.Enable(EnableCap.PolygonOffsetFill);
+        GL.PolygonOffset(2.5f, 4.0f);
+        GL.CullFace(CullFaceMode.Back);
 
         _shadowShader!.Use();
         _shadowShader.SetMatrix4("uLightSpaceMatrix", _lightViewProjection);
@@ -92,6 +94,7 @@ void main()
         RenderSceneToShadowMap(scene);
 
         GL.CullFace(CullFaceMode.Back);
+        GL.Disable(EnableCap.PolygonOffsetFill);
         shadowMap.Unbind();
     }
 
@@ -132,7 +135,9 @@ void main()
             
             GL.Enable(EnableCap.DepthTest);
             GL.DepthFunc(DepthFunction.Less);
-            GL.CullFace(CullFaceMode.Front);
+            GL.Enable(EnableCap.PolygonOffsetFill);
+            GL.PolygonOffset(2.5f, 4.0f);
+            GL.CullFace(CullFaceMode.Back);
 
             _shadowShader!.Use();
             _shadowShader.SetMatrix4("uLightSpaceMatrix", _cascadeLightViewProjections[i]);
@@ -140,6 +145,7 @@ void main()
             RenderSceneToShadowMap(scene);
 
             GL.CullFace(CullFaceMode.Back);
+            GL.Disable(EnableCap.PolygonOffsetFill);
             shadowMap.Unbind();
         }
 
