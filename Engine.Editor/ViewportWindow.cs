@@ -470,6 +470,41 @@ public class ViewportWindow
                     _editor.PathTracer.SetDirectionalLight(_editor.DirectionalLight);
                     _editor.PathTracer.Apply(_texture, 0, _width, _height);
                     finalTexture = _editor.PathTracer.Texture;
+                    
+                    if (_editor.SelectedObject != null && _gizmoRenderer != null && _gizmoInitialized)
+                    {
+                        uint gizmoFramebuffer = (uint)GL.GenFramebuffer();
+                        GL.BindFramebuffer(FramebufferTarget.Framebuffer, gizmoFramebuffer);
+                        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, finalTexture, 0);
+                        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, _depthTexture, 0);
+                        
+                        GL.Viewport(0, 0, _width, _height);
+                        GL.DepthFunc(DepthFunction.Less);
+                        GL.Enable(EnableCap.DepthTest);
+                        GL.Enable(EnableCap.Blend);
+                        GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                        
+                        var transform = _editor.SelectedObject.Transform;
+                        if (transform != null)
+                        {
+                            int selectedAxis = _isDraggingGizmo ? _selectedGizmoAxis : -1;
+                            switch (_gizmoMode)
+                            {
+                                case TransformGizmoMode.Position:
+                                    _gizmoRenderer.RenderPositionGizmo(transform, _editor.Camera, _editor.Camera.ViewProjectionMatrix, selectedAxis);
+                                    break;
+                                case TransformGizmoMode.Rotation:
+                                    _gizmoRenderer.RenderRotationGizmo(transform, _editor.Camera, _editor.Camera.ViewProjectionMatrix, selectedAxis);
+                                    break;
+                                case TransformGizmoMode.Scale:
+                                    _gizmoRenderer.RenderScaleGizmo(transform, _editor.Camera, _editor.Camera.ViewProjectionMatrix, selectedAxis);
+                                    break;
+                            }
+                        }
+                        
+                        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+                        GL.DeleteFramebuffer(gizmoFramebuffer);
+                    }
                 }
 
                 if (_editor.AntiAliasingSettings != null && _editor.AntiAliasingSettings.Enabled)

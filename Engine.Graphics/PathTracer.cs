@@ -32,6 +32,7 @@ public class PathTracer : PostProcessingEffect
     private Scene? _currentScene;
     private int _sceneHash;
     private int _lastSceneHash = -1;
+    private int _cameraHash;
 
     public uint Texture => _resultTexture;
 
@@ -56,12 +57,31 @@ public class PathTracer : PostProcessingEffect
     {
         _currentScene = scene;
         int newHash = ComputeSceneHash(scene);
-        if (newHash != _sceneHash)
+        int newCameraHash = 0;
+        if (_camera != null)
+        {
+            newCameraHash = _camera.ViewProjectionMatrix.GetHashCode();
+            newCameraHash ^= _camera.Position.GetHashCode();
+        }
+        
+        bool sceneChanged = (newHash != _sceneHash);
+        bool cameraChanged = (newCameraHash != _cameraHash);
+        
+        if (sceneChanged)
         {
             _lastSceneHash = _sceneHash;
             _sceneHash = newHash;
-            UpdateGeometry(scene);
             _frameCount = 0;
+        }
+        
+        if (sceneChanged || cameraChanged)
+        {
+            _cameraHash = newCameraHash;
+            UpdateGeometry(scene);
+            if (sceneChanged)
+            {
+                _frameCount = 0;
+            }
         }
     }
 
@@ -113,10 +133,107 @@ public class PathTracer : PostProcessingEffect
         return hash;
     }
 
+    private struct FrustumPlane
+    {
+        public Vector3 Normal;
+        public float Distance;
+    }
+
+    private FrustumPlane[] ExtractFrustumPlanes(Matrix4 viewProj)
+    {
+        FrustumPlane[] planes = new FrustumPlane[6];
+        
+        planes[0].Normal.X = viewProj.M14 + viewProj.M11;
+        planes[0].Normal.Y = viewProj.M24 + viewProj.M21;
+        planes[0].Normal.Z = viewProj.M34 + viewProj.M31;
+        planes[0].Distance = viewProj.M44 + viewProj.M41;
+        
+        planes[1].Normal.X = viewProj.M14 - viewProj.M11;
+        planes[1].Normal.Y = viewProj.M24 - viewProj.M21;
+        planes[1].Normal.Z = viewProj.M34 - viewProj.M31;
+        planes[1].Distance = viewProj.M44 - viewProj.M41;
+        
+        planes[2].Normal.X = viewProj.M14 + viewProj.M12;
+        planes[2].Normal.Y = viewProj.M24 + viewProj.M22;
+        planes[2].Normal.Z = viewProj.M34 + viewProj.M32;
+        planes[2].Distance = viewProj.M44 + viewProj.M42;
+        
+        planes[3].Normal.X = viewProj.M14 - viewProj.M12;
+        planes[3].Normal.Y = viewProj.M24 - viewProj.M22;
+        planes[3].Normal.Z = viewProj.M34 - viewProj.M32;
+        planes[3].Distance = viewProj.M44 - viewProj.M42;
+        
+        planes[4].Normal.X = viewProj.M14 + viewProj.M13;
+        planes[4].Normal.Y = viewProj.M24 + viewProj.M23;
+        planes[4].Normal.Z = viewProj.M34 + viewProj.M33;
+        planes[4].Distance = viewProj.M44 + viewProj.M43;
+        
+        planes[5].Normal.X = viewProj.M14 - viewProj.M13;
+        planes[5].Normal.Y = viewProj.M24 - viewProj.M23;
+        planes[5].Normal.Z = viewProj.M34 - viewProj.M33;
+        planes[5].Distance = viewProj.M44 - viewProj.M43;
+        
+        for (int i = 0; i < 6; i++)
+        {
+            float length = planes[i].Normal.Length;
+            if (length > 0.0001f)
+            {
+                planes[i].Normal = planes[i].Normal / length;
+                planes[i].Distance = planes[i].Distance / length;
+            }
+        }
+        
+        return planes;
+    }
+
+    private bool IsTriangleInFrustum(Triangle tri, FrustumPlane[] planes, float margin = 0.0f)
+    {
+        Vector3[] vertices = { tri.V0, tri.V1, tri.V2 };
+        
+        for (int p = 0; p < 6; p++)
+        {
+            bool allOutside = true;
+            for (int v = 0; v < 3; v++)
+            {
+                float distance = Vector3.Dot(planes[p].Normal, vertices[v]) + planes[p].Distance + margin;
+                if (distance >= -0.01f)
+                {
+                    allOutside = false;
+                    break;
+                }
+            }
+            if (allOutside)
+                return false;
+        }
+        
+        return true;
+    }
+
     private void UpdateGeometry(Scene scene)
     {
         var renderers = scene.FindObjectsOfType<MeshRenderer>();
         var triangles = new List<Triangle>();
+        
+        FrustumPlane[]? frustumPlanes = null;
+        float frustumMargin = 0.0f;
+        if (_camera != null)
+        {
+            Matrix4 viewProj = _camera.ViewProjectionMatrix;
+            frustumPlanes = ExtractFrustumPlanes(viewProj);
+            
+            if (_settings.EnableReflections)
+            {
+                float farDist = _camera.FarPlane;
+                float fov = _camera.FOV;
+                float tanHalfFov = MathF.Tan(fov * 0.5f);
+                
+                float farHeight = tanHalfFov * farDist;
+                float farWidth = farHeight * _camera.AspectRatio;
+                float farDiagonal = MathF.Sqrt(farWidth * farWidth + farHeight * farHeight);
+                
+                frustumMargin = farDiagonal * 0.5f;
+            }
+        }
         
         foreach (var renderer in renderers)
         {
@@ -146,7 +263,12 @@ public class PathTracer : PostProcessingEffect
                     
                     var tri = ExtractTriangle(vertexData, indexData, i, stride, modelMatrix, materialAlbedo);
                     if (tri.HasValue)
-                        triangles.Add(tri.Value);
+                    {
+                        if (frustumPlanes == null || IsTriangleInFrustum(tri.Value, frustumPlanes, frustumMargin))
+                        {
+                            triangles.Add(tri.Value);
+                        }
+                    }
                 }
             }
             else
@@ -157,7 +279,12 @@ public class PathTracer : PostProcessingEffect
                     if (i + 2 >= vertexCount) break;
                     var tri = ExtractTriangle(vertexData, null, i, stride, modelMatrix, materialAlbedo);
                     if (tri.HasValue)
-                        triangles.Add(tri.Value);
+                    {
+                        if (frustumPlanes == null || IsTriangleInFrustum(tri.Value, frustumPlanes, frustumMargin))
+                        {
+                            triangles.Add(tri.Value);
+                        }
+                    }
                 }
             }
         }
@@ -521,6 +648,7 @@ uniform int lastSceneHash;
 uniform int enableDirectLight;
 uniform int enableShadows;
 uniform int enableReflections;
+uniform int shouldUpdateReflections;
 
 uint rndSeed;
 
@@ -942,23 +1070,64 @@ vec3 Radiance(Ray ray, vec3 lightDir, out float directLightAmount)
             }
         }
         
-        if (i < rayDepth - 1 && enableReflections != 0)
+        if (i < rayDepth - 1 && enableReflections != 0 && i == 0)
         {
+            if (shouldUpdateReflections == 0)
+            {
+                break;
+            }
+            
+            vec3 indirectLight = vec3(0.0);
+            
             vec3 rd = CosineSampleHemisphere(normal);
             float pdf = max(dot(normal, rd), 0.0) / PI;
             
             if (pdf > 1e-7)
             {
                 float NdotRd = max(abs(dot(normal, rd)), 1e-7);
-                color *= albedoDemodulated * NdotRd / pdf;
-            }
-            else
-            {
-                break;
+                vec3 throughput = albedoDemodulated * NdotRd / pdf;
+                
+                if (enableDirectLight != 0)
+                {
+                    vec3 nextPosition = position + rd * 0.1;
+                    HitInfo nextHit = TraceRay(Ray(nextPosition, normalize(rd)));
+                    
+                    if (nextHit.hit)
+                    {
+                        vec3 nextNormal = nextHit.normal;
+                        vec3 nextPos = nextHit.position + nextNormal * 0.1;
+                        
+                        vec3 lightContrib = vec3(0.0);
+                        if (enableShadows != 0)
+                        {
+                            lightContrib = SampleDirectLight(nextPos, nextNormal, lightDir, basicDataUBO.LightColor);
+                        }
+                        else
+                        {
+                            vec3 nld = normalize(-lightDir);
+                            float NdotL = max(dot(nextNormal, nld), 0.0);
+                            if (NdotL > 0.0)
+                            {
+                                lightContrib = basicDataUBO.LightColor * NdotL / TWO_OVER_PI;
+                            }
+                        }
+                        
+                        indirectLight = lightContrib * nextHit.albedo / TWO_OVER_PI;
+                    }
+                    else
+                    {
+                        indirectLight = GetSkyColor(rd);
+                    }
+                }
+                
+                outColor += color * throughput * indirectLight;
             }
             
-            ray.origin = position;
-            ray.direction = normalize(rd);
+            break;
+        }
+        else if (i < rayDepth - 1)
+        {
+            break;
         }
         else
         {
@@ -1024,7 +1193,14 @@ void main()
     vec3 irradiance = vec3(0.0);
     float avgDirectLight = 0.0;
     
-    for (int i = 0; i < actualSPP; i++)
+    bool shouldUpdateReflections = (sceneHash != lastSceneHash) || thisRendererFrame < 2;
+    int totalSPP = actualSPP;
+    if (enableReflections != 0 && !shouldUpdateReflections)
+    {
+        totalSPP = max(1, actualSPP / 2);
+    }
+    
+    for (int i = 0; i < totalSPP; i++)
     {
         vec2 jitter = vec2(GetRandomFloat01(), GetRandomFloat01()) - 0.5;
         vec2 uvOffset = (imgCoord + vec2(0.5) + jitter) / imgResultSize;
@@ -1053,14 +1229,20 @@ void main()
         avgDirectLight += directLight;
     }
     
-    if (actualSPP > 0)
+    if (totalSPP != actualSPP && totalSPP > 0)
     {
-        irradiance /= float(actualSPP);
-        avgDirectLight /= float(actualSPP);
+        irradiance *= float(actualSPP) / float(totalSPP);
+        avgDirectLight *= float(actualSPP) / float(totalSPP);
+    }
+    
+    if (totalSPP > 0)
+    {
+        irradiance /= float(totalSPP);
+        avgDirectLight /= float(totalSPP);
     }
     
     float shadowDarkness = 1.0 - smoothstep(0.0, 0.15, avgDirectLight);
-    shadowDarkness = mix(1.0, 0.2, shadowDarkness);
+    shadowDarkness = mix(1.0, 0.0, shadowDarkness);
     irradiance *= shadowDarkness;
     
     vec3 denoisedIrradiance = irradiance;
@@ -1073,8 +1255,42 @@ void main()
         vec3 centerPos = position;
         float centerLuminance = dot(irradiance, vec3(0.299, 0.587, 0.114));
         
-        int radius = 1;
-        float kernel[2] = float[2](1.0, 0.5);
+        float luminanceVariance = 0.0;
+        int sampleCount = 0;
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                ivec2 sampleCoord = imgCoord + ivec2(dx, dy);
+                if (sampleCoord.x < 0 || sampleCoord.x >= imgResultSize.x || 
+                    sampleCoord.y < 0 || sampleCoord.y >= imgResultSize.y)
+                    continue;
+                
+                vec2 sampleUV = (vec2(sampleCoord) + vec2(0.5)) / imgResultSize;
+                float sampleDepth = texture(DepthTexture, sampleUV).r;
+                
+                if (sampleDepth >= 1.0 - EPSILON)
+                    continue;
+                
+                vec3 sampleColor = imageLoad(ImgResult, sampleCoord).rgb;
+                float sampleLuminance = dot(sampleColor, vec3(0.299, 0.587, 0.114));
+                float diff = abs(sampleLuminance - centerLuminance);
+                luminanceVariance += diff;
+                sampleCount++;
+            }
+        }
+        
+        if (sampleCount > 0)
+        {
+            luminanceVariance /= float(sampleCount);
+        }
+        
+        bool isReflection = luminanceVariance > 0.15;
+        int radius = isReflection ? 2 : 1;
+        float blendFactor = isReflection ? 0.5 : 0.35;
+        float luminanceWeightScale = isReflection ? 0.5 : 0.8;
+        
+        float kernel[3] = float[3](1.0, 0.666, 0.333);
         
         for (int dy = -radius; dy <= radius; dy++)
         {
@@ -1103,13 +1319,13 @@ void main()
                 
                 float depthDiff = abs(sampleDepth - centerDepth);
                 float posDist = length(samplePos - centerPos);
-                float spatialDist = length(vec2(dx, dy));
+                int spatialDist = abs(dx) + abs(dy);
                 float luminanceDiff = abs(sampleLuminance - centerLuminance);
                 
                 float depthWeight = exp(-depthDiff * 80.0);
                 float posWeight = exp(-posDist * 1.5);
-                float spatialKernel = (dx == 0 && dy == 0) ? 1.0 : kernel[abs(dx) + abs(dy)];
-                float luminanceWeight = exp(-luminanceDiff * 0.8);
+                float spatialKernel = spatialDist < 3 ? kernel[spatialDist] : 0.0;
+                float luminanceWeight = exp(-luminanceDiff * luminanceWeightScale);
                 
                 float weight = depthWeight * posWeight * spatialKernel * luminanceWeight;
                 spatialFiltered += sampleColor * weight;
@@ -1120,7 +1336,7 @@ void main()
         if (totalWeight > 0.001)
         {
             spatialFiltered /= totalWeight;
-            denoisedIrradiance = mix(irradiance, spatialFiltered, 0.35);
+            denoisedIrradiance = mix(irradiance, spatialFiltered, blendFactor);
         }
     }
     
@@ -1195,6 +1411,9 @@ void main()
         _computeShader.SetInt("enableDirectLight", _settings.EnableDirectLight ? 1 : 0);
         _computeShader.SetInt("enableShadows", _settings.EnableShadows ? 1 : 0);
         _computeShader.SetInt("enableReflections", _settings.EnableReflections ? 1 : 0);
+        
+        bool shouldUpdateReflections = (_sceneHash != _lastSceneHash) || _frameCount < 2;
+        _computeShader.SetInt("shouldUpdateReflections", shouldUpdateReflections ? 1 : 0);
         
         GL.BindBufferBase(BufferRangeTarget.UniformBuffer, 0, _basicDataUBO);
         
