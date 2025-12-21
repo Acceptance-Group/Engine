@@ -38,6 +38,28 @@ public class Shader : Disposable
         CacheUniformLocations();
     }
 
+    public Shader(string computeSource)
+    {
+        int computeShader = CompileShader(ShaderType.ComputeShader, computeSource);
+
+        _programID = GL.CreateProgram();
+        GL.AttachShader(_programID, computeShader);
+        GL.LinkProgram(_programID);
+
+        GL.GetProgram(_programID, GetProgramParameterName.LinkStatus, out int success);
+        if (success == 0)
+        {
+            string infoLog = GL.GetProgramInfoLog(_programID);
+            GL.DeleteProgram(_programID);
+            throw new Exception($"Compute shader program linking failed: {infoLog}");
+        }
+
+        GL.DetachShader(_programID, computeShader);
+        GL.DeleteShader(computeShader);
+
+        CacheUniformLocations();
+    }
+
     private int CompileShader(ShaderType type, string source)
     {
         int shader = GL.CreateShader(type);

@@ -22,7 +22,24 @@ public class SettingsWindow
 
         if (ImGui.Begin("Settings", ref _showWindow))
         {
-            if (ImGui.CollapsingHeader("Shadows"))
+            if (ImGui.CollapsingHeader("Rendering"))
+            {
+                int pipeline = (int)_editor.RenderingPipeline;
+                string[] pipelines = { "Default Rendering Pipeline", "Path Traced Rendering Pipeline" };
+                if (ImGui.Combo("Rendering Pipeline", ref pipeline, pipelines, pipelines.Length))
+                {
+                    _editor.RenderingPipeline = (EditorApplication.RenderingPipelineType)pipeline;
+                    if (_editor.PathTracingSettings != null)
+                    {
+                        _editor.PathTracingSettings.Enabled = (pipeline == 1);
+                    }
+                }
+            }
+
+            bool shadowsEnabled = _editor.RenderingPipeline == EditorApplication.RenderingPipelineType.Default;
+            if (shadowsEnabled)
+            {
+                if (ImGui.CollapsingHeader("Shadows"))
             {
                 var shadowSettings = _editor.ShadowSettings;
                 if (shadowSettings != null)
@@ -116,6 +133,7 @@ public class SettingsWindow
                         }
                     }
                 }
+                }
             }
 
             if (ImGui.CollapsingHeader("Physics"))
@@ -168,6 +186,61 @@ public class SettingsWindow
                 if (ImGui.Checkbox("V-Sync", ref vSync))
                 {
                     _editor.VSyncEnabled = vSync;
+                }
+            }
+
+            bool pathTracingEnabled = _editor.RenderingPipeline == EditorApplication.RenderingPipelineType.PathTraced;
+            if (pathTracingEnabled)
+            {
+                if (_editor.PathTracingSettings != null)
+                {
+                    _editor.PathTracingSettings.Enabled = true;
+                }
+                
+                if (ImGui.CollapsingHeader("Path Tracing"))
+                {
+                    var ptSettings = _editor.PathTracingSettings;
+                    if (ptSettings != null)
+                    {
+
+                        bool enableDirectLight = ptSettings.EnableDirectLight;
+                        if (ImGui.Checkbox("Enable Direct Light", ref enableDirectLight))
+                        {
+                            ptSettings.EnableDirectLight = enableDirectLight;
+                        }
+
+                        bool enableShadows = ptSettings.EnableShadows;
+                        if (ImGui.Checkbox("Enable Shadows", ref enableShadows))
+                        {
+                            ptSettings.EnableShadows = enableShadows;
+                        }
+
+                        bool enableReflections = ptSettings.EnableReflections;
+                        if (ImGui.Checkbox("Enable Reflections", ref enableReflections))
+                        {
+                            ptSettings.EnableReflections = enableReflections;
+                        }
+
+                        ImGui.Separator();
+
+                        int rayDepth = ptSettings.RayDepth;
+                        if (ImGui.SliderInt("Ray Depth", ref rayDepth, 1, 32))
+                        {
+                            ptSettings.RayDepth = rayDepth;
+                        }
+
+                        int spp = ptSettings.SamplesPerPixel;
+                        if (ImGui.SliderInt("Samples Per Pixel", ref spp, 1, 16))
+                        {
+                            ptSettings.SamplesPerPixel = spp;
+                        }
+
+                        int maxSamples = ptSettings.MaxSamples;
+                        if (ImGui.SliderInt("Max Samples", ref maxSamples, 64, 4096))
+                        {
+                            ptSettings.MaxSamples = maxSamples;
+                        }
+                    }
                 }
             }
 

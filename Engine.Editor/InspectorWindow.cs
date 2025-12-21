@@ -6,6 +6,7 @@ using Engine.Core;
 using Engine.Graphics;
 using Engine.Physics;
 using Engine.Math;
+using System.Reflection;
 
 namespace Engine.Editor;
 
@@ -289,14 +290,7 @@ public class InspectorWindow
                 component.Enabled = enabled;
             }
 
-            if (component is MeshRenderer renderer)
-            {
-                RenderMeshRenderer(renderer);
-            }
-            else if (component is Rigidbody rigidbody)
-            {
-                RenderRigidbody(rigidbody);
-            }
+            RenderComponentFields(component);
 
             if (ImGui.Button("Remove"))
             {
@@ -305,24 +299,166 @@ public class InspectorWindow
         }
     }
 
-    private void RenderMeshRenderer(MeshRenderer renderer)
+    private void RenderComponentFields(Component component)
     {
-        ImGui.Text($"Has Mesh: {renderer.Mesh != null}");
-        ImGui.Text($"Has Material: {renderer.Material != null}");
+        var type = component.GetType();
+        var flags = BindingFlags.Instance | BindingFlags.Public;
+
+        foreach (var field in type.GetFields(flags))
+        {
+            if (field.IsInitOnly)
+                continue;
+
+            if (field.Name == nameof(Component.GameObject) || field.Name == nameof(Component.Transform) || field.Name == nameof(Component.Enabled))
+                continue;
+
+            var value = field.GetValue(component);
+            if (RenderValue(field.Name, field.FieldType, value, v => field.SetValue(component, v)))
+                continue;
+        }
+
+        foreach (var prop in type.GetProperties(flags))
+        {
+            if (!prop.CanRead || !prop.CanWrite)
+                continue;
+
+            if (prop.Name == nameof(Component.GameObject) || prop.Name == nameof(Component.Transform) || prop.Name == nameof(Component.Enabled))
+                continue;
+
+            var indexParams = prop.GetIndexParameters();
+            if (indexParams.Length > 0)
+                continue;
+
+            object? value;
+            try
+            {
+                value = prop.GetValue(component);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (RenderValue(prop.Name, prop.PropertyType, value, v => prop.SetValue(component, v)))
+                continue;
+        }
     }
 
-    private void RenderRigidbody(Rigidbody rigidbody)
+    private bool RenderValue(string name, Type type, object? value, Action<object?> setter)
     {
-        bool kinematic = rigidbody.IsKinematic;
-        if (ImGui.Checkbox("Is Kinematic", ref kinematic))
+        if (type == typeof(bool))
         {
-            rigidbody.IsKinematic = kinematic;
+            bool v = value is bool b && b;
+            if (ImGui.Checkbox(name, ref v))
+            {
+                setter(v);
+            }
+            return true;
         }
 
-        float mass = rigidbody.Mass;
-        if (ImGui.DragFloat("Mass", ref mass, 0.1f, 0.0f, 1000.0f))
+        if (type == typeof(int))
         {
-            rigidbody.Mass = mass;
+            int v = value is int i ? i : 0;
+            if (ImGui.DragInt(name, ref v))
+            {
+                setter(v);
+            }
+            return true;
         }
+
+        if (type == typeof(float))
+        {
+            float v = value is float f ? f : 0f;
+            if (ImGui.DragFloat(name, ref v, 0.1f))
+            {
+                setter(v);
+            }
+            return true;
+        }
+
+        if (type == typeof(double))
+        {
+            float v = value is double d ? (float)d : 0f;
+            if (ImGui.DragFloat(name, ref v, 0.1f))
+            {
+                setter((double)v);
+            }
+            return true;
+        }
+
+        if (type == typeof(string))
+        {
+            string s = value as string ?? string.Empty;
+            byte[] buffer = new byte[256];
+            int len = s.Length > 255 ? 255 : s.Length;
+            System.Text.Encoding.UTF8.GetBytes(s, 0, len, buffer, 0);
+            if (ImGui.InputText(name, buffer, (uint)buffer.Length))
+            {
+                int nullIndex = Array.IndexOf(buffer, (byte)0);
+                if (nullIndex < 0) nullIndex = buffer.Length;
+                string newValue = System.Text.Encoding.UTF8.GetString(buffer, 0, nullIndex);
+                setter(newValue);
+            }
+            return true;
+        }
+
+        if (type == typeof(Vector2))
+        {
+            Vector2 v = value is Vector2 vv ? vv : Vector2.Zero;
+            var nv = new System.Numerics.Vector2(v.X, v.Y);
+            if (ImGui.DragFloat2(name, ref nv, 0.1f))
+            {
+                setter(new Vector2(nv.X, nv.Y));
+            }
+            return true;
+        }
+
+        if (type == typeof(Vector3))
+        {
+            Vector3 v = value is Vector3 vv ? vv : Vector3.Zero;
+            var nv = new System.Numerics.Vector3(v.X, v.Y, v.Z);
+            if (ImGui.DragFloat3(name, ref nv, 0.1f))
+            {
+                setter(new Vector3(nv.X, nv.Y, nv.Z));
+            }
+            return true;
+        }
+
+        if (type == typeof(Vector4))
+        {
+            Vector4 v = value is Vector4 vv ? vv : Vector4.Zero;
+            var nv = new System.Numerics.Vector4(v.X, v.Y, v.Z, v.W);
+            if (ImGui.DragFloat4(name, ref nv, 0.1f))
+            {
+                setter(new Vector4(nv.X, nv.Y, nv.Z, nv.W));
+            }
+            return true;
+        }
+
+        if (type.IsEnum)
+        {
+            var names = Enum.GetNames(type);
+            if (names.Length == 0)
+                return true;
+
+            int current = 0;
+            if (value != null)
+            {
+                var idx = Array.IndexOf(names, value.ToString());
+                if (idx >= 0)
+                    current = idx;
+            }
+
+            if (ImGui.Combo(name, ref current, names, names.Length))
+            {
+                var parsed = Enum.Parse(type, names[current]);
+                setter(parsed);
+            }
+            return true;
+        }
+
+        string text = value != null ? value.ToString() ?? string.Empty : "null";
+        ImGui.Text($"{name}: {text}");
+        return true;
     }
 }

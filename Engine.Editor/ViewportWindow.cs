@@ -66,7 +66,7 @@ public class ViewportWindow
     private void CreateFramebuffer()
     {
         int samples = GetMSAASamples();
-        
+
         if (samples > 0)
         {
             int maxSamples = GL.GetInteger(GetPName.MaxSamples);
@@ -74,7 +74,7 @@ public class ViewportWindow
             {
                 samples = maxSamples;
             }
-            
+
             bool msaaSuccess = false;
             for (int testSamples = samples; testSamples > 0 && !msaaSuccess; testSamples--)
             {
@@ -84,7 +84,7 @@ public class ViewportWindow
                 _msaaColorRenderbuffer = (uint)GL.GenRenderbuffer();
                 GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _msaaColorRenderbuffer);
                 GL.RenderbufferStorageMultisample(RenderbufferTarget.Renderbuffer, testSamples, RenderbufferStorage.Rgba8, _width, _height);
-                
+
                 ErrorCode error = GL.GetError();
                 if (error != ErrorCode.NoError)
                 {
@@ -120,7 +120,7 @@ public class ViewportWindow
                     _msaaDepthRenderbuffer = 0;
                 }
             }
-            
+
             if (!msaaSuccess)
             {
                 Logger.Warning($"MSAA framebuffer creation failed for all sample counts, falling back to non-MSAA");
@@ -159,12 +159,12 @@ public class ViewportWindow
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         _msaaSamples = samples;
     }
-    
+
     private int GetMSAASamples()
     {
         if (_editor.AntiAliasingSettings == null || !_editor.AntiAliasingSettings.Enabled)
             return 0;
-            
+
         return _editor.AntiAliasingSettings.Mode switch
         {
             AntiAliasingMode.MSAA2x => 2,
@@ -179,7 +179,7 @@ public class ViewportWindow
         if (ImGui.Begin("Viewport"))
         {
             _isHovered = ImGui.IsWindowHovered();
-            
+
             var viewportSize = ImGui.GetContentRegionAvail();
             if (viewportSize.X > 0 && viewportSize.Y > 0)
             {
@@ -196,167 +196,171 @@ public class ViewportWindow
 
                 int samples = GetMSAASamples();
                 uint renderFramebuffer = (samples > 0 && _msaaFramebuffer > 0) ? _msaaFramebuffer : _framebuffer;
-                
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, renderFramebuffer);
-                
-                if (Engine.Core.System.DevMode)
+
+                uint finalTexture = _texture;
+
                 {
-                    var fbStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
-                    if (fbStatus != FramebufferErrorCode.FramebufferComplete)
-                    {
-                        Logger.Error($"Framebuffer not complete before render! Status: {fbStatus}");
-                    }
-                }
-                
-                GL.Viewport(0, 0, _width, _height);
-                GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);
-                GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+                    GL.BindFramebuffer(FramebufferTarget.Framebuffer, renderFramebuffer);
 
-                if (_editor.ShadowRenderer != null && _editor.DirectionalLight != null && _editor.CurrentScene != null && _editor.ShadowSettings.Enabled && _editor.DirectionalLight.CastShadows)
-                {
-                    _editor.ShadowRenderer.RenderShadowMap(_editor.DirectionalLight, _editor.Camera, _editor.CurrentScene);
-                }
-                
-                if (samples > 0 && _msaaFramebuffer > 0)
-                {
-                    GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _msaaFramebuffer);
-                    GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _framebuffer);
-                    if (Engine.Core.System.IsMacOS())
+                    if (Engine.Core.System.DevMode)
                     {
-                        GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
-                    }
-                    else
-                    {
-                        GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
-                    }
-                }
-                
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
-                GL.Viewport(0, 0, _width, _height);
-
-                GL.Enable(EnableCap.DepthTest);
-                GL.DepthFunc(DepthFunction.Less);
-                GL.Disable(EnableCap.Blend);
-                
-                GL.Enable(EnableCap.CullFace);
-                GL.CullFace(CullFaceMode.Back);
-
-                if (_editor.Skybox != null)
-                {
-                    _editor.Skybox.Render(_editor.Camera.ViewMatrix, _editor.Camera.ProjectionMatrix);
-                }
-
-                GL.Clear(ClearBufferMask.DepthBufferBit);
-
-                var scene = _editor.CurrentScene;
-                if (scene != null && _editor.DefaultShader != null)
-                {
-                    _editor.DefaultShader.Use();
-                    
-                    _editor.DefaultShader.SetMatrix4("uView", _editor.Camera.ViewMatrix);
-                    
-                    if (_editor.ShadowRenderer != null && _editor.ShadowSettings.Enabled && _editor.DirectionalLight != null && _editor.DirectionalLight.CastShadows)
-                    {
-                        _editor.ShadowRenderer.BindShadowMap(_editor.DefaultShader);
-                    }
-                    else
-                    {
-                        _editor.DefaultShader.SetInt("uUseShadows", 0);
-                    }
-
-                    Span<int> prevPolygonMode = stackalloc int[2];
-                    unsafe
-                    {
-                        fixed (int* iptr = &prevPolygonMode[0])
+                        var fbStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+                        if (fbStatus != FramebufferErrorCode.FramebufferComplete)
                         {
-                            GL.GetInteger(GetPName.PolygonMode, iptr);
+                            Logger.Error($"Framebuffer not complete before render! Status: {fbStatus}");
                         }
                     }
+
+                    GL.Viewport(0, 0, _width, _height);
+                    GL.ClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+                    GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+                    bool useDefaultRendering = _editor.RenderingPipeline == EditorApplication.RenderingPipelineType.Default;
+                    if (useDefaultRendering && _editor.ShadowRenderer != null && _editor.DirectionalLight != null && _editor.CurrentScene != null && _editor.ShadowSettings.Enabled && _editor.DirectionalLight.CastShadows)
+                    {
+                        _editor.ShadowRenderer.RenderShadowMap(_editor.DirectionalLight, _editor.Camera, _editor.CurrentScene);
+                    }
+
+                    if (samples > 0 && _msaaFramebuffer > 0)
+                    {
+                        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _msaaFramebuffer);
+                        GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _framebuffer);
+                        if (Engine.Core.System.IsMacOS())
+                        {
+                            GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
+                        }
+                        else
+                        {
+                            GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
+                        }
+                    }
+
+                    GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
+                    GL.Viewport(0, 0, _width, _height);
+
+                    GL.Enable(EnableCap.DepthTest);
+                    GL.DepthFunc(DepthFunction.Less);
+                    GL.Disable(EnableCap.Blend);
+
+                    GL.Enable(EnableCap.CullFace);
+                    GL.CullFace(CullFaceMode.Back);
+
+                    if (_editor.Skybox != null)
+                    {
+                        _editor.Skybox.Render(_editor.Camera.ViewMatrix, _editor.Camera.ProjectionMatrix);
+                    }
+
+                    GL.Clear(ClearBufferMask.DepthBufferBit);
+
+                    var scene = _editor.CurrentScene;
+                    if (scene != null && _editor.DefaultShader != null)
+                    {
+                        _editor.DefaultShader.Use();
+
+                        _editor.DefaultShader.SetMatrix4("uView", _editor.Camera.ViewMatrix);
+
+                        if (_editor.RenderingPipeline == EditorApplication.RenderingPipelineType.Default && _editor.ShadowRenderer != null && _editor.ShadowSettings.Enabled && _editor.DirectionalLight != null && _editor.DirectionalLight.CastShadows)
+                        {
+                            _editor.ShadowRenderer.BindShadowMap(_editor.DefaultShader);
+                        }
+                        else
+                        {
+                            _editor.DefaultShader.SetInt("uUseShadows", 0);
+                        }
+
+                        Span<int> prevPolygonMode = stackalloc int[2];
+                        unsafe
+                        {
+                            fixed (int* iptr = &prevPolygonMode[0])
+                            {
+                                GL.GetInteger(GetPName.PolygonMode, iptr);
+                            }
+                        }
 
                         int glVersion = GL.GetInteger(GetPName.MajorVersion) * 100 + GL.GetInteger(GetPName.MinorVersion) * 10;
                         bool compatibilityProfile = (GL.GetInteger((GetPName)All.ContextProfileMask) & (int)All.ContextCompatibilityProfileBit) != 0;
-                        
-                    var renderers = scene.FindObjectsOfType<MeshRenderer>();
-                    
-                    if (_renderingMode == RenderingMode.ShadedWireframe)
-                    {
-                        if (glVersion <= 310 || compatibilityProfile)
-                        {
-                            GL.PolygonMode(MaterialFace.Front, PolygonMode.Fill);
-                            GL.PolygonMode(MaterialFace.Back, PolygonMode.Fill);
-                        }
-                        else
-                        {
-                            GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
-                    }
 
-                    foreach (var renderer in renderers)
-                    {
-                        if (renderer.Enabled && renderer.GameObject?.Active == true)
-                        {
-                            renderer.Render(_editor.Camera.ViewProjectionMatrix);
-                        }
-                    }
+                        var renderers = scene.FindObjectsOfType<MeshRenderer>();
 
-                        if (glVersion <= 310 || compatibilityProfile)
+                        if (_renderingMode == RenderingMode.ShadedWireframe)
                         {
-                            GL.PolygonMode(MaterialFace.Front, PolygonMode.Line);
-                            GL.PolygonMode(MaterialFace.Back, PolygonMode.Line);
-                        }
-                        else
-                        {
-                            GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
-                        }
-
-                        foreach (var renderer in renderers)
-                        {
-                            if (renderer.Enabled && renderer.GameObject?.Active == true)
+                            if (glVersion <= 310 || compatibilityProfile)
                             {
-                                renderer.Render(_editor.Camera.ViewProjectionMatrix);
+                                GL.PolygonMode(MaterialFace.Front, PolygonMode.Fill);
+                                GL.PolygonMode(MaterialFace.Back, PolygonMode.Fill);
+                            }
+                            else
+                            {
+                                GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
+                            }
+
+                            foreach (var renderer in renderers)
+                            {
+                                if (renderer.Enabled && renderer.GameObject?.Active == true)
+                                {
+                                    renderer.Render(_editor.Camera.ViewProjectionMatrix);
+                                }
+                            }
+
+                            if (glVersion <= 310 || compatibilityProfile)
+                            {
+                                GL.PolygonMode(MaterialFace.Front, PolygonMode.Line);
+                                GL.PolygonMode(MaterialFace.Back, PolygonMode.Line);
+                            }
+                            else
+                            {
+                                GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
+                            }
+
+                            foreach (var renderer in renderers)
+                            {
+                                if (renderer.Enabled && renderer.GameObject?.Active == true)
+                                {
+                                    renderer.Render(_editor.Camera.ViewProjectionMatrix);
+                                }
                             }
                         }
-                    }
-                    else if (_renderingMode == RenderingMode.Wireframe)
-                    {
-                        if (glVersion <= 310 || compatibilityProfile)
+                        else if (_renderingMode == RenderingMode.Wireframe)
                         {
-                            GL.PolygonMode(MaterialFace.Front, PolygonMode.Line);
-                            GL.PolygonMode(MaterialFace.Back, PolygonMode.Line);
+                            if (glVersion <= 310 || compatibilityProfile)
+                            {
+                                GL.PolygonMode(MaterialFace.Front, PolygonMode.Line);
+                                GL.PolygonMode(MaterialFace.Back, PolygonMode.Line);
+                            }
+                            else
+                            {
+                                GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
+                            }
+
+                            foreach (var renderer in renderers)
+                            {
+                                if (renderer.Enabled && renderer.GameObject?.Active == true)
+                                {
+                                    renderer.Render(_editor.Camera.ViewProjectionMatrix);
+                                }
+                            }
                         }
                         else
                         {
-                            GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
-                        }
-
-                        foreach (var renderer in renderers)
-                        {
-                            if (renderer.Enabled && renderer.GameObject?.Active == true)
+                            if (glVersion <= 310 || compatibilityProfile)
                             {
-                                renderer.Render(_editor.Camera.ViewProjectionMatrix);
+                                GL.PolygonMode(MaterialFace.Front, PolygonMode.Fill);
+                                GL.PolygonMode(MaterialFace.Back, PolygonMode.Fill);
+                            }
+                            else
+                            {
+                                GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
+                            }
+
+                            foreach (var renderer in renderers)
+                            {
+                                if (renderer.Enabled && renderer.GameObject?.Active == true)
+                                {
+                                    renderer.Render(_editor.Camera.ViewProjectionMatrix);
+                                }
                             }
                         }
-                    }
-                    else
-                    {
-                        if (glVersion <= 310 || compatibilityProfile)
-                        {
-                            GL.PolygonMode(MaterialFace.Front, PolygonMode.Fill);
-                            GL.PolygonMode(MaterialFace.Back, PolygonMode.Fill);
-                        }
-                        else
-                        {
-                            GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
-                        }
 
-                        foreach (var renderer in renderers)
-                        {
-                            if (renderer.Enabled && renderer.GameObject?.Active == true)
-                            {
-                                renderer.Render(_editor.Camera.ViewProjectionMatrix);
-                            }
-                        }
-                    }
-                        
                         if (glVersion <= 310 || compatibilityProfile)
                         {
                             GL.PolygonMode(MaterialFace.Front, (PolygonMode)prevPolygonMode[0]);
@@ -366,57 +370,42 @@ public class ViewportWindow
                         {
                             GL.PolygonMode(MaterialFace.FrontAndBack, (PolygonMode)prevPolygonMode[0]);
                         }
-                    
-                    GL.DepthFunc(DepthFunction.Less);
-                }
 
-                if (!_gizmoInitialized && _gizmoRenderer != null)
-                {
-                    _gizmoRenderer.Initialize();
-                    _gizmoInitialized = true;
-                }
+                        GL.DepthFunc(DepthFunction.Less);
+                    }
 
-                if (_editor.SelectedObject != null && _gizmoRenderer != null && _gizmoInitialized)
-                {
-                    var transform = _editor.SelectedObject.Transform;
-                    if (transform != null)
+                    if (!_gizmoInitialized && _gizmoRenderer != null)
                     {
-                        int selectedAxis = _isDraggingGizmo ? _selectedGizmoAxis : -1;
-                        switch (_gizmoMode)
+                        _gizmoRenderer.Initialize();
+                        _gizmoInitialized = true;
+                    }
+
+                    if (_editor.SelectedObject != null && _gizmoRenderer != null && _gizmoInitialized)
+                    {
+                        var transform = _editor.SelectedObject.Transform;
+                        if (transform != null)
                         {
-                            case TransformGizmoMode.Position:
-                                _gizmoRenderer.RenderPositionGizmo(transform, _editor.Camera, _editor.Camera.ViewProjectionMatrix, selectedAxis);
-                                break;
-                            case TransformGizmoMode.Rotation:
-                                _gizmoRenderer.RenderRotationGizmo(transform, _editor.Camera, _editor.Camera.ViewProjectionMatrix, selectedAxis);
-                                break;
-                            case TransformGizmoMode.Scale:
-                                _gizmoRenderer.RenderScaleGizmo(transform, _editor.Camera, _editor.Camera.ViewProjectionMatrix, selectedAxis);
-                                break;
+                            int selectedAxis = _isDraggingGizmo ? _selectedGizmoAxis : -1;
+                            switch (_gizmoMode)
+                            {
+                                case TransformGizmoMode.Position:
+                                    _gizmoRenderer.RenderPositionGizmo(transform, _editor.Camera, _editor.Camera.ViewProjectionMatrix, selectedAxis);
+                                    break;
+                                case TransformGizmoMode.Rotation:
+                                    _gizmoRenderer.RenderRotationGizmo(transform, _editor.Camera, _editor.Camera.ViewProjectionMatrix, selectedAxis);
+                                    break;
+                                case TransformGizmoMode.Scale:
+                                    _gizmoRenderer.RenderScaleGizmo(transform, _editor.Camera, _editor.Camera.ViewProjectionMatrix, selectedAxis);
+                                    break;
+                            }
                         }
                     }
+
+                    GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+
+                    finalTexture = _texture;
                 }
 
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-                
-                uint finalTexture = _texture;
-                
-                if (_editor.AntiAliasingSettings != null && _editor.AntiAliasingSettings.Enabled)
-                {
-                    if (_editor.AntiAliasingSettings.Mode == AntiAliasingMode.FXAA && _editor.FXAA != null)
-                    {
-                        _editor.FXAA.Resize(_width, _height);
-                        _editor.FXAA.Render(_texture);
-                        finalTexture = _editor.FXAA.Texture;
-                    }
-                    else if (_editor.AntiAliasingSettings.Mode == AntiAliasingMode.SMAA && _editor.SMAA != null)
-                    {
-                        _editor.SMAA.Resize(_width, _height);
-                        _editor.SMAA.Render(_texture);
-                        finalTexture = _editor.SMAA.Texture;
-                    }
-                }
-                
                 if (_editor.PostProcessingSettings != null)
                 {
                     if (_editor.MotionBlur != null)
@@ -437,7 +426,7 @@ public class ViewportWindow
                     {
                         _editor.MotionBlur.SetActive(false);
                     }
-                    
+
                     uint currentTexture = finalTexture;
 
                     if (_editor.PostProcessingSettings.SSAOEnabled && _editor.SSAO != null)
@@ -453,24 +442,52 @@ public class ViewportWindow
                         _editor.Bloom.Apply(currentTexture, 0, _width, _height);
                         currentTexture = _editor.Bloom.Texture;
                     }
-                    
+
                     if (_editor.PostProcessingSettings.VignetteEnabled && _editor.Vignette != null)
                     {
                         _editor.Vignette.Resize(_width, _height);
                         _editor.Vignette.Apply(currentTexture, 0, _width, _height);
                         currentTexture = _editor.Vignette.Texture;
                     }
-                    
+
                     if (_editor.PostProcessingSettings.MotionBlurEnabled && _editor.MotionBlur != null)
                     {
                         _editor.MotionBlur.Resize(_width, _height);
                         _editor.MotionBlur.Apply(currentTexture, 0, _width, _height);
                         currentTexture = _editor.MotionBlur.Texture;
                     }
-                    
+
                     finalTexture = currentTexture;
                 }
-                
+
+                if (_editor.RenderingPipeline == EditorApplication.RenderingPipelineType.PathTraced && 
+                    _editor.PathTracingSettings != null && _editor.PathTracingSettings.Enabled && _editor.PathTracer != null && _editor.CurrentScene != null)
+                {
+                    _editor.PathTracer.Resize(_width, _height);
+                    _editor.PathTracer.SetTextures(_texture, _depthTexture);
+                    _editor.PathTracer.UpdateScene(_editor.CurrentScene);
+                    _editor.PathTracer.UpdateCamera(_editor.Camera);
+                    _editor.PathTracer.SetDirectionalLight(_editor.DirectionalLight);
+                    _editor.PathTracer.Apply(_texture, 0, _width, _height);
+                    finalTexture = _editor.PathTracer.Texture;
+                }
+
+                if (_editor.AntiAliasingSettings != null && _editor.AntiAliasingSettings.Enabled)
+                {
+                    if (_editor.AntiAliasingSettings.Mode == AntiAliasingMode.FXAA && _editor.FXAA != null)
+                    {
+                        _editor.FXAA.Resize(_width, _height);
+                        _editor.FXAA.Render(finalTexture);
+                        finalTexture = _editor.FXAA.Texture;
+                    }
+                    else if (_editor.AntiAliasingSettings.Mode == AntiAliasingMode.SMAA && _editor.SMAA != null)
+                    {
+                        _editor.SMAA.Resize(_width, _height);
+                        _editor.SMAA.Render(finalTexture);
+                        finalTexture = _editor.SMAA.Texture;
+                    }
+                }
+
                 int viewportWidth, viewportHeight;
                 if (Engine.Core.System.IsMacOS() && _editor.Window != null)
                 {
@@ -498,7 +515,7 @@ public class ViewportWindow
                 }
 
                 ImGui.Image((IntPtr)finalTexture, viewportSize, new System.Numerics.Vector2(0, 1), new System.Numerics.Vector2(1, 0));
-                
+
                 if (Engine.Core.System.DevMode)
                 {
                     ErrorCode error = GL.GetError();
@@ -507,7 +524,7 @@ public class ViewportWindow
                         Logger.Error($"Viewport: OpenGL error after ImGui.Image: {error}");
                     }
                 }
-                
+
                 HandleObjectPicking();
                 RenderOverlay();
             }
@@ -584,7 +601,7 @@ public class ViewportWindow
                         _objectStartPosition = transform.Position;
                         _objectStartRotation = transform.Rotation;
                         _objectStartScale = transform.Scale;
-                        
+
                         Vector3 axisDir = axis == 0 ? Vector3.Right : (axis == 1 ? Vector3.Up : Vector3.Backward);
                         if (_gizmoMode == TransformGizmoMode.Position)
                         {
@@ -592,7 +609,7 @@ public class ViewportWindow
                             Vector3 planeNormal = Vector3.Cross(axisDir, cameraForward).Normalized();
                             if (planeNormal.LengthSquared < 0.01f)
                                 planeNormal = Vector3.Cross(axisDir, _editor.Camera.Up).Normalized();
-                            
+
                             float planeD = -Vector3.Dot(planeNormal, _objectStartWorldPosition);
                             float denom = Vector3.Dot(planeNormal, rayDirection);
                             if (MathF.Abs(denom) > 0.0001f)
@@ -610,7 +627,7 @@ public class ViewportWindow
                         {
                             _dragStartOffset = 0.0f;
                         }
-                        
+
                         return;
                     }
                 }
@@ -646,7 +663,7 @@ public class ViewportWindow
                     Vector3 objectPos = renderer.Transform.WorldPosition;
                     Vector3 toObject = objectPos - rayOrigin;
                     float projectionLength = Vector3.Dot(toObject, rayDirection);
-                    
+
                     if (projectionLength < 0)
                         continue;
 
@@ -670,13 +687,13 @@ public class ViewportWindow
         Engine.Math.Vector4 clipPos = viewProjection * new Engine.Math.Vector4(worldPos.X, worldPos.Y, worldPos.Z, 1.0f);
         if (MathF.Abs(clipPos.W) < 0.0001f)
             return Vector3.Zero;
-        
+
         float ndcX = clipPos.X / clipPos.W;
         float ndcY = clipPos.Y / clipPos.W;
-        
+
         float screenX = (ndcX + 1.0f) * 0.5f * viewportSize.X;
         float screenY = (1.0f - ndcY) * 0.5f * viewportSize.Y;
-        
+
         return new Vector3(screenX, screenY, clipPos.Z / clipPos.W);
     }
 
@@ -693,21 +710,21 @@ public class ViewportWindow
             var imageMin = ImGui.GetItemRectMin();
             var imageMax = ImGui.GetItemRectMax();
             System.Numerics.Vector2 viewportSize = new System.Numerics.Vector2(imageMax.X - imageMin.X, imageMax.Y - imageMin.Y);
-            
+
             Matrix4 viewProjection = _editor.Camera.ViewProjectionMatrix;
             Vector3 axisStartScreen = WorldToScreen(objectWorldPos, viewProjection, viewportSize);
             Vector3 axisEndScreen = WorldToScreen(objectWorldPos + axisDirection * ArrowLength, viewProjection, viewportSize);
-            
+
             Vector3 axisScreenDir = (axisEndScreen - axisStartScreen);
             float axisScreenLength = axisScreenDir.Length;
             if (axisScreenLength < 0.0001f)
                 return;
-            
+
             axisScreenDir = axisScreenDir / axisScreenLength;
-            
+
             Vector3 mouseDelta = new Vector3(mousePos.X - _dragStartPosition.X, mousePos.Y - _dragStartPosition.Y, 0);
             float screenMovement = Vector3.Dot(mouseDelta, new Vector3(axisScreenDir.X, axisScreenDir.Y, 0));
-            
+
             float worldMovement = (screenMovement / axisScreenLength) * ArrowLength;
 
             if (transform.Parent == null)
@@ -735,21 +752,21 @@ public class ViewportWindow
             var imageMin = ImGui.GetItemRectMin();
             var imageMax = ImGui.GetItemRectMax();
             System.Numerics.Vector2 viewportSize = new System.Numerics.Vector2(imageMax.X - imageMin.X, imageMax.Y - imageMin.Y);
-            
+
             Matrix4 viewProjection = _editor.Camera.ViewProjectionMatrix;
             Vector3 axisStartScreen = WorldToScreen(objectWorldPos, viewProjection, viewportSize);
             Vector3 axisEndScreen = WorldToScreen(objectWorldPos + axisDirection * ArrowLength, viewProjection, viewportSize);
-            
+
             Vector3 axisScreenDir = (axisEndScreen - axisStartScreen);
             float axisScreenLength = axisScreenDir.Length;
             if (axisScreenLength < 0.0001f)
                 return;
-            
+
             axisScreenDir = axisScreenDir / axisScreenLength;
-            
+
             Vector3 mouseDelta = new Vector3(mousePos.X - _dragStartPosition.X, mousePos.Y - _dragStartPosition.Y, 0);
             float screenMovement = Vector3.Dot(mouseDelta, new Vector3(axisScreenDir.X, axisScreenDir.Y, 0));
-            
+
             float scaleFactor = 1.0f + (screenMovement / axisScreenLength);
 
             Vector3 newScale = _objectStartScale;
@@ -767,45 +784,45 @@ public class ViewportWindow
             var imageMin = ImGui.GetItemRectMin();
             var imageMax = ImGui.GetItemRectMax();
             System.Numerics.Vector2 viewportSize = new System.Numerics.Vector2(imageMax.X - imageMin.X, imageMax.Y - imageMin.Y);
-            
+
             Matrix4 viewProjection = _editor.Camera.ViewProjectionMatrix;
             Vector3 objectScreen = WorldToScreen(objectWorldPos, viewProjection, viewportSize);
-            
+
             Vector3 cameraPos = _editor.Camera.Position;
             Vector3 toObject = (_objectStartWorldPosition - cameraPos).Normalized();
             Vector3 right = Vector3.Cross(axisDirection, toObject).Normalized();
             if (right.LengthSquared < 0.01f)
                 right = Vector3.Cross(axisDirection, _editor.Camera.Up).Normalized();
             Vector3 up = Vector3.Cross(right, axisDirection).Normalized();
-            
+
             Vector3 rightScreen = WorldToScreen(objectWorldPos + right * RotationArcRadius, viewProjection, viewportSize);
             Vector3 upScreen = WorldToScreen(objectWorldPos + up * RotationArcRadius, viewProjection, viewportSize);
-            
+
             Vector3 rightScreenDir = (rightScreen - objectScreen);
             Vector3 upScreenDir = (upScreen - objectScreen);
-            
+
             float rightScreenLen = rightScreenDir.Length;
             float upScreenLen = upScreenDir.Length;
             if (rightScreenLen < 0.0001f || upScreenLen < 0.0001f)
                 return;
-            
+
             rightScreenDir = rightScreenDir / rightScreenLen;
             upScreenDir = upScreenDir / upScreenLen;
-            
+
             Vector3 startMouseDir = new Vector3(_dragStartPosition.X - objectScreen.X, _dragStartPosition.Y - objectScreen.Y, 0);
             Vector3 currentMouseDir = new Vector3(mousePos.X - objectScreen.X, mousePos.Y - objectScreen.Y, 0);
-            
+
             float startMouseLen = startMouseDir.Length;
             float currentMouseLen = currentMouseDir.Length;
             if (startMouseLen < 0.0001f || currentMouseLen < 0.0001f)
                 return;
-            
+
             startMouseDir = startMouseDir / startMouseLen;
             currentMouseDir = currentMouseDir / currentMouseLen;
-            
-            float startAngle = MathF.Atan2(Vector3.Dot(startMouseDir, new Vector3(upScreenDir.X, upScreenDir.Y, 0)), 
+
+            float startAngle = MathF.Atan2(Vector3.Dot(startMouseDir, new Vector3(upScreenDir.X, upScreenDir.Y, 0)),
                                           Vector3.Dot(startMouseDir, new Vector3(rightScreenDir.X, rightScreenDir.Y, 0)));
-            float currentAngle = MathF.Atan2(Vector3.Dot(currentMouseDir, new Vector3(upScreenDir.X, upScreenDir.Y, 0)), 
+            float currentAngle = MathF.Atan2(Vector3.Dot(currentMouseDir, new Vector3(upScreenDir.X, upScreenDir.Y, 0)),
                                              Vector3.Dot(currentMouseDir, new Vector3(rightScreenDir.X, rightScreenDir.Y, 0)));
             float angleDelta = currentAngle - startAngle;
 
@@ -820,22 +837,22 @@ public class ViewportWindow
         var windowSize = ImGui.GetWindowSize();
         var imageMin = ImGui.GetItemRectMin();
         var imageMax = ImGui.GetItemRectMax();
-        
+
         float buttonSize = 28.0f;
         float buttonSpacing = 4.0f;
         float padding = 12.0f;
-        
+
         ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new System.Numerics.Vector2(0, 0));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new System.Numerics.Vector2(buttonSpacing, 0));
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4.0f);
-        
+
         var leftPos = new System.Numerics.Vector2(imageMin.X + padding, imageMin.Y + padding);
         ImGui.SetCursorPos(new System.Numerics.Vector2(leftPos.X - windowPos.X, leftPos.Y - windowPos.Y));
-        
+
         bool isPosition = _gizmoMode == TransformGizmoMode.Position;
         bool isRotation = _gizmoMode == TransformGizmoMode.Rotation;
         bool isScale = _gizmoMode == TransformGizmoMode.Scale;
-        
+
         if (isPosition)
             ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.26f, 0.59f, 0.98f, 1.0f));
         else
@@ -845,7 +862,7 @@ public class ViewportWindow
         if (ImGui.Button("P", new System.Numerics.Vector2(buttonSize, buttonSize)))
             _gizmoMode = TransformGizmoMode.Position;
         ImGui.PopStyleColor(3);
-        
+
         ImGui.SameLine();
         if (isRotation)
             ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.26f, 0.59f, 0.98f, 1.0f));
@@ -856,7 +873,7 @@ public class ViewportWindow
         if (ImGui.Button("R", new System.Numerics.Vector2(buttonSize, buttonSize)))
             _gizmoMode = TransformGizmoMode.Rotation;
         ImGui.PopStyleColor(3);
-        
+
         ImGui.SameLine();
         if (isScale)
             ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.26f, 0.59f, 0.98f, 1.0f));
@@ -867,26 +884,26 @@ public class ViewportWindow
         if (ImGui.Button("S", new System.Numerics.Vector2(buttonSize, buttonSize)))
             _gizmoMode = TransformGizmoMode.Scale;
         ImGui.PopStyleColor(3);
-        
+
         ImGui.PopStyleVar(3);
-        
+
         float textPadding = 12.0f;
         float defaultWidth = ImGui.CalcTextSize("Default").X + textPadding * 2;
         float wireframeWidth = ImGui.CalcTextSize("Wireframe").X + textPadding * 2;
         float shadedWidth = ImGui.CalcTextSize("Shaded").X + textPadding * 2;
         float totalRightWidth = defaultWidth + wireframeWidth + shadedWidth + buttonSpacing * 2;
-        
+
         var rightPos = new System.Numerics.Vector2(imageMax.X - totalRightWidth - padding, imageMin.Y + padding);
         ImGui.SetCursorPos(new System.Numerics.Vector2(rightPos.X - windowPos.X, rightPos.Y - windowPos.Y));
-        
+
         ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new System.Numerics.Vector2(textPadding, 0));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new System.Numerics.Vector2(buttonSpacing, 0));
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4.0f);
-        
+
         bool isDefault = _renderingMode == RenderingMode.Default;
         bool isWireframe = _renderingMode == RenderingMode.Wireframe;
         bool isShadedWireframe = _renderingMode == RenderingMode.ShadedWireframe;
-        
+
         if (isDefault)
             ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.26f, 0.59f, 0.98f, 1.0f));
         else
@@ -896,7 +913,7 @@ public class ViewportWindow
         if (ImGui.Button("Default", new System.Numerics.Vector2(0, buttonSize)))
             _renderingMode = RenderingMode.Default;
         ImGui.PopStyleColor(3);
-        
+
         ImGui.SameLine();
         if (isWireframe)
             ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.26f, 0.59f, 0.98f, 1.0f));
@@ -907,7 +924,7 @@ public class ViewportWindow
         if (ImGui.Button("Wireframe", new System.Numerics.Vector2(0, buttonSize)))
             _renderingMode = RenderingMode.Wireframe;
         ImGui.PopStyleColor(3);
-        
+
         ImGui.SameLine();
         if (isShadedWireframe)
             ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.26f, 0.59f, 0.98f, 1.0f));
@@ -918,7 +935,7 @@ public class ViewportWindow
         if (ImGui.Button("Shaded", new System.Numerics.Vector2(0, buttonSize)))
             _renderingMode = RenderingMode.ShadedWireframe;
         ImGui.PopStyleColor(3);
-        
+
         ImGui.PopStyleVar(3);
     }
 
@@ -933,7 +950,7 @@ public class ViewportWindow
             _msaaColorRenderbuffer = 0;
             _msaaDepthRenderbuffer = 0;
         }
-        
+
         GL.DeleteTexture(_texture);
         GL.DeleteTexture(_depthTexture);
         GL.DeleteFramebuffer(_framebuffer);

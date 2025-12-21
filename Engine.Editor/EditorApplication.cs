@@ -48,12 +48,17 @@ public class EditorApplication : IDisposable
     private Bloom? _bloom;
     private Vignette? _vignette;
     private SSAO? _ssao;
+    private PathTracingSettings _pathTracingSettings;
+    private PathTracer? _pathTracer;
     private bool _showPhysicsDebug = false;
     private bool _isPhysicsSimulating = false;
     private bool _isRunning = false;
     private bool _vSyncEnabled = true;
     private enum PlayMode { Stopped, Playing, Paused }
     private PlayMode _playMode = PlayMode.Stopped;
+    
+    public enum RenderingPipelineType { Default, PathTraced }
+    private RenderingPipelineType _renderingPipeline = RenderingPipelineType.Default;
     private Dictionary<GameObject, (Engine.Math.Vector3 position, Engine.Math.Quaternion rotation)> _originalTransforms = new Dictionary<GameObject, (Engine.Math.Vector3, Engine.Math.Quaternion)>();
 
     public EditorApplication()
@@ -84,6 +89,7 @@ public class EditorApplication : IDisposable
         _directionalLight = new DirectionalLight();
         _antiAliasingSettings = new AntiAliasingSettings();
         _postProcessingSettings = new PostProcessingSettings();
+        _pathTracingSettings = new PathTracingSettings();
 
         _camera = new Camera
         {
@@ -140,6 +146,7 @@ public class EditorApplication : IDisposable
         _bloom = new Bloom(1920, 1080, _postProcessingSettings);
         _vignette = new Vignette(1920, 1080, _postProcessingSettings);
         _ssao = new SSAO(1920, 1080, _postProcessingSettings);
+        _pathTracer = new PathTracer(1920, 1080, _pathTracingSettings);
     }
 
     private void CreateDefaultShader()
@@ -1162,6 +1169,13 @@ void main()
     public Bloom? Bloom => _bloom;
     public Vignette? Vignette => _vignette;
     public SSAO? SSAO => _ssao;
+    public PathTracingSettings PathTracingSettings => _pathTracingSettings;
+    public PathTracer? PathTracer => _pathTracer;
+    public RenderingPipelineType RenderingPipeline
+    {
+        get => _renderingPipeline;
+        set => _renderingPipeline = value;
+    }
     public bool ShowPhysicsDebug
     {
         get => _showPhysicsDebug;
@@ -1341,6 +1355,7 @@ void main()
         _bloom?.Dispose();
         _vignette?.Dispose();
         _ssao?.Dispose();
+        _pathTracer?.Dispose();
         _imguiController?.Dispose();
         _window?.Dispose();
     }

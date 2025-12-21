@@ -34,6 +34,16 @@ public class VertexBuffer : Disposable
         GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
     }
 
+    public float[] GetData()
+    {
+        Bind();
+        int size = _vertexCount * _layout.Stride * sizeof(float);
+        float[] data = new float[_vertexCount * _layout.Stride];
+        GL.GetBufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, size, data);
+        Unbind();
+        return data;
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)

@@ -28,6 +28,10 @@ public abstract class Component
         GameObject?.RemoveComponent<T>();
     }
 
+    public virtual void RenderInspector()
+    {
+    }
+
     protected internal virtual void OnAttached() { }
     protected internal virtual void OnDetached() { }
     protected internal virtual void OnUpdate(float deltaTime) { }

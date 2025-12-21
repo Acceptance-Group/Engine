@@ -31,6 +31,16 @@ public class IndexBuffer : Disposable
         GL.BindBuffer(BufferTarget.ElementArrayBuffer, 0);
     }
 
+    public uint[] GetData()
+    {
+        Bind();
+        int size = _indexCount * sizeof(uint);
+        uint[] data = new uint[_indexCount];
+        GL.GetBufferSubData(BufferTarget.ElementArrayBuffer, IntPtr.Zero, size, data);
+        Unbind();
+        return data;
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)

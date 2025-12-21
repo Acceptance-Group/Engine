@@ -135,6 +135,11 @@ public class Rigidbody : Component
         }
     }
 
+    public override void RenderInspector()
+    {
+        base.RenderInspector();
+    }
+
     public void SyncWithTransform()
     {
         if (_body == null || Transform == null)

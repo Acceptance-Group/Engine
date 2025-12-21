@@ -32,8 +32,8 @@ public class MeshRenderer : Component
         {
             if (_defaultShader == null)
                 return;
-            material = new Material 
-            { 
+            material = new Material
+            {
                 Shader = _defaultShader,
                 Color = new Engine.Math.Vector4(1.0f, 1.0f, 1.0f, 1.0f)
             };

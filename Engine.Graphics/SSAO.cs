@@ -11,14 +11,17 @@ public class SSAO : PostProcessingEffect
     private Shader? _shader;
     private uint _framebuffer;
     private uint _texture;
+    private uint _blurFramebuffer;
+    private uint _blurTexture;
     private int _width;
     private int _height;
     private readonly PostProcessingSettings _settings;
     private uint _depthTexture;
     private Matrix4 _projection = Matrix4.Identity;
     private Matrix4 _inverseProjection = Matrix4.Identity;
+    private Shader? _blurShader;
 
-    public uint Texture => _texture;
+    public uint Texture => _blurTexture != 0 ? _blurTexture : _texture;
 
     public SSAO(int width, int height, PostProcessingSettings settings)
     {
@@ -27,6 +30,7 @@ public class SSAO : PostProcessingEffect
         _settings = settings;
         CreateFramebuffer();
         CreateShader();
+        CreateBlurShader();
     }
 
     public void SetDepthTexture(uint depthTexture)
@@ -58,6 +62,24 @@ public class SSAO : PostProcessingEffect
         if (status != FramebufferErrorCode.FramebufferComplete)
         {
             throw new Exception($"SSAO framebuffer incomplete: {status}");
+        }
+
+        _blurFramebuffer = (uint)GL.GenFramebuffer();
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _blurFramebuffer);
+
+        _blurTexture = (uint)GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, _blurTexture);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, _width, _height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _blurTexture, 0);
+
+        var blurStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+        if (blurStatus != FramebufferErrorCode.FramebufferComplete)
+        {
+            throw new Exception($"SSAO blur framebuffer incomplete: {blurStatus}");
         }
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
@@ -146,6 +168,43 @@ void main()
         _shader = new Shader(vertexShader, fragmentShader);
     }
 
+    private void CreateBlurShader()
+    {
+        const string vertexShader = @"
+#version 330 core
+layout (location = 0) in vec2 aPosition;
+layout (location = 1) in vec2 aTexCoord;
+out vec2 TexCoord;
+void main()
+{
+    TexCoord = aTexCoord;
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+}";
+
+        const string fragmentShader = @"
+#version 330 core
+in vec2 TexCoord;
+out vec4 FragColor;
+uniform sampler2D uSource;
+uniform vec2 uTexelSize;
+void main()
+{
+    vec3 sum = vec3(0.0);
+    for (int x = -1; x <= 1; x++)
+    {
+        for (int y = -1; y <= 1; y++)
+        {
+            vec2 offset = vec2(x, y) * uTexelSize;
+            sum += texture(uSource, TexCoord + offset).rgb;
+        }
+    }
+    vec3 color = sum / 9.0;
+    FragColor = vec4(color, 1.0);
+}";
+
+        _blurShader = new Shader(vertexShader, fragmentShader);
+    }
+
     public override void Apply(uint sourceTexture, uint targetFramebuffer, int width, int height)
     {
         if (!Enabled || _shader == null || _depthTexture == 0 || !_settings.SSAOEnabled)
@@ -156,11 +215,7 @@ void main()
             Resize(width, height);
         }
 
-        uint target = _framebuffer;
-        if (targetFramebuffer > 0)
-            target = (uint)targetFramebuffer;
-
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, target);
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
         GL.Viewport(0, 0, _width, _height);
         GL.Clear(ClearBufferMask.ColorBufferBit);
 
@@ -183,6 +238,25 @@ void main()
         _shader.SetFloat("uPower", _settings.SSAOPower);
 
         RenderQuad();
+
+        if (_blurShader != null)
+        {
+            uint blurTarget = targetFramebuffer > 0 ? (uint)targetFramebuffer : _blurFramebuffer;
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, blurTarget);
+            GL.Viewport(0, 0, _width, _height);
+            GL.Clear(ClearBufferMask.ColorBufferBit);
+
+            GL.Disable(EnableCap.DepthTest);
+            GL.Disable(EnableCap.CullFace);
+
+            _blurShader.Use();
+            GL.ActiveTexture(TextureUnit.Texture0);
+            GL.BindTexture(TextureTarget.Texture2D, _texture);
+            _blurShader.SetInt("uSource", 0);
+            _blurShader.SetVector2("uTexelSize", new Vector2(1.0f / _width, 1.0f / _height));
+
+            RenderQuad();
+        }
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
@@ -246,6 +320,16 @@ void main()
 
         GL.DeleteTexture(_texture);
         GL.DeleteFramebuffer(_framebuffer);
+        if (_blurTexture != 0)
+        {
+            GL.DeleteTexture(_blurTexture);
+            _blurTexture = 0;
+        }
+        if (_blurFramebuffer != 0)
+        {
+            GL.DeleteFramebuffer(_blurFramebuffer);
+            _blurFramebuffer = 0;
+        }
         CreateFramebuffer();
     }
 
@@ -253,9 +337,28 @@ void main()
     {
         if (disposing)
         {
-            GL.DeleteFramebuffer(_framebuffer);
-            GL.DeleteTexture(_texture);
+            if (_framebuffer != 0)
+            {
+                GL.DeleteFramebuffer(_framebuffer);
+                _framebuffer = 0;
+            }
+            if (_texture != 0)
+            {
+                GL.DeleteTexture(_texture);
+                _texture = 0;
+            }
+            if (_blurFramebuffer != 0)
+            {
+                GL.DeleteFramebuffer(_blurFramebuffer);
+                _blurFramebuffer = 0;
+            }
+            if (_blurTexture != 0)
+            {
+                GL.DeleteTexture(_blurTexture);
+                _blurTexture = 0;
+            }
             _shader?.Dispose();
+            _blurShader?.Dispose();
         }
     }
 }
