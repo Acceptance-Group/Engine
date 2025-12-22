@@ -66,6 +66,7 @@ public class EditorApplication : IDisposable
         var nativeWindowSettings = NativeWindowSettings.Default;
         nativeWindowSettings.ClientSize = new OpenTK.Mathematics.Vector2i(1920, 1080);
         nativeWindowSettings.Title = "Engine";
+        nativeWindowSettings.WindowState = WindowState.Maximized;
 
         _window = new GameWindow(GameWindowSettings.Default, nativeWindowSettings);
         _window.Load += OnLoad;

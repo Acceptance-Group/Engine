@@ -26,7 +26,8 @@ public class SettingsWindow
             {
                 int pipeline = (int)_editor.RenderingPipeline;
                 string[] pipelines = { "Default Rendering Pipeline", "Path Traced Rendering Pipeline" };
-                if (ImGui.Combo("Rendering Pipeline", ref pipeline, pipelines, pipelines.Length))
+                ImGui.PushItemWidth(-1f);
+                if (ImGui.Combo("##HiddenLabel", ref pipeline, pipelines, pipelines.Length))
                 {
                     _editor.RenderingPipeline = (EditorApplication.RenderingPipelineType)pipeline;
                     if (_editor.PathTracingSettings != null)
@@ -34,6 +35,7 @@ public class SettingsWindow
                         _editor.PathTracingSettings.Enabled = (pipeline == 1);
                     }
                 }
+                ImGui.PopItemWidth();
             }
 
             bool shadowsEnabled = _editor.RenderingPipeline == EditorApplication.RenderingPipelineType.Default;

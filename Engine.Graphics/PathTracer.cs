@@ -12,7 +12,7 @@ public class PathTracer : PostProcessingEffect
 {
     private const int LOCAL_SIZE_X = 8;
     private const int LOCAL_SIZE_Y = 8;
-    
+
     private Shader? _computeShader;
     private uint _resultTexture;
     private int _width;
@@ -24,7 +24,8 @@ public class PathTracer : PostProcessingEffect
     private DirectionalLight? _directionalLight;
     private uint _depthTexture;
     private uint _colorTexture;
-    
+    private uint _prevDepthTexture;
+
     private uint _triangleSSBO;
     private uint _bvhSSBO;
     private int _triangleCount;
@@ -33,6 +34,9 @@ public class PathTracer : PostProcessingEffect
     private int _sceneHash;
     private int _lastSceneHash = -1;
     private int _cameraHash;
+    private bool _needsFullReset;
+    private Vector3 _lastCameraPosition;
+    private bool _cameraMovedSignificantly;
 
     public uint Texture => _resultTexture;
 
@@ -41,6 +45,9 @@ public class PathTracer : PostProcessingEffect
         _width = width;
         _height = height;
         _settings = settings;
+        _needsFullReset = true;
+        _cameraMovedSignificantly = false;
+        _lastCameraPosition = Vector3.Zero;
         CreateTextures();
         CreateUBOs();
         CreateSSBOs();
@@ -63,24 +70,24 @@ public class PathTracer : PostProcessingEffect
             newCameraHash = _camera.ViewProjectionMatrix.GetHashCode();
             newCameraHash ^= _camera.Position.GetHashCode();
         }
-        
+
         bool sceneChanged = (newHash != _sceneHash);
         bool cameraChanged = (newCameraHash != _cameraHash);
-        
+
         if (sceneChanged)
         {
             _lastSceneHash = _sceneHash;
             _sceneHash = newHash;
-            _frameCount = 0;
+            _needsFullReset = true;
         }
-        
+
         if (sceneChanged || cameraChanged)
         {
             _cameraHash = newCameraHash;
             UpdateGeometry(scene);
-            if (sceneChanged)
+            if (cameraChanged)
             {
-                _frameCount = 0;
+                _needsFullReset = true;
             }
         }
     }
@@ -93,23 +100,38 @@ public class PathTracer : PostProcessingEffect
             float positionThreshold = 0.001f;
             Vector3 posDiff = _camera.Position - camera.Position;
             bool positionChanged = posDiff.LengthSquared > positionThreshold * positionThreshold;
-            
+
             bool viewChanged = _camera.ViewMatrix != camera.ViewMatrix;
             bool projectionChanged = _camera.ProjectionMatrix != camera.ProjectionMatrix;
-            
+
             cameraMoved = positionChanged || viewChanged || projectionChanged;
         }
-        
-        _camera = camera;
-        
-        if (cameraMoved)
+
+        if (_camera != null && camera != null)
         {
-            _frameCount = 0;
+            Vector3 posDiff = _camera.Position - camera.Position;
+            float moveDistance = posDiff.Length;
+
+            bool viewChanged = _camera.ViewMatrix != camera.ViewMatrix;
+            bool projectionChanged = _camera.ProjectionMatrix != camera.ProjectionMatrix;
+
+            _cameraMovedSignificantly = moveDistance > 0.02f || viewChanged || projectionChanged;
+
+            if (_cameraMovedSignificantly)
+            {
+                _lastCameraPosition = camera.Position;
+            }
         }
-        
+        else if (camera != null)
+        {
+            _lastCameraPosition = camera.Position;
+            _cameraMovedSignificantly = false;
+        }
+
+        _camera = camera;
         UpdateBasicDataUBO();
     }
-    
+
     public void SetDirectionalLight(DirectionalLight? light)
     {
         _directionalLight = light;
@@ -142,37 +164,37 @@ public class PathTracer : PostProcessingEffect
     private FrustumPlane[] ExtractFrustumPlanes(Matrix4 viewProj)
     {
         FrustumPlane[] planes = new FrustumPlane[6];
-        
+
         planes[0].Normal.X = viewProj.M14 + viewProj.M11;
         planes[0].Normal.Y = viewProj.M24 + viewProj.M21;
         planes[0].Normal.Z = viewProj.M34 + viewProj.M31;
         planes[0].Distance = viewProj.M44 + viewProj.M41;
-        
+
         planes[1].Normal.X = viewProj.M14 - viewProj.M11;
         planes[1].Normal.Y = viewProj.M24 - viewProj.M21;
         planes[1].Normal.Z = viewProj.M34 - viewProj.M31;
         planes[1].Distance = viewProj.M44 - viewProj.M41;
-        
+
         planes[2].Normal.X = viewProj.M14 + viewProj.M12;
         planes[2].Normal.Y = viewProj.M24 + viewProj.M22;
         planes[2].Normal.Z = viewProj.M34 + viewProj.M32;
         planes[2].Distance = viewProj.M44 + viewProj.M42;
-        
+
         planes[3].Normal.X = viewProj.M14 - viewProj.M12;
         planes[3].Normal.Y = viewProj.M24 - viewProj.M22;
         planes[3].Normal.Z = viewProj.M34 - viewProj.M32;
         planes[3].Distance = viewProj.M44 - viewProj.M42;
-        
+
         planes[4].Normal.X = viewProj.M14 + viewProj.M13;
         planes[4].Normal.Y = viewProj.M24 + viewProj.M23;
         planes[4].Normal.Z = viewProj.M34 + viewProj.M33;
         planes[4].Distance = viewProj.M44 + viewProj.M43;
-        
+
         planes[5].Normal.X = viewProj.M14 - viewProj.M13;
         planes[5].Normal.Y = viewProj.M24 - viewProj.M23;
         planes[5].Normal.Z = viewProj.M34 - viewProj.M33;
         planes[5].Distance = viewProj.M44 - viewProj.M43;
-        
+
         for (int i = 0; i < 6; i++)
         {
             float length = planes[i].Normal.Length;
@@ -182,14 +204,14 @@ public class PathTracer : PostProcessingEffect
                 planes[i].Distance = planes[i].Distance / length;
             }
         }
-        
+
         return planes;
     }
 
     private bool IsTriangleInFrustum(Triangle tri, FrustumPlane[] planes, float margin = 0.0f)
     {
         Vector3[] vertices = { tri.V0, tri.V1, tri.V2 };
-        
+
         for (int p = 0; p < 6; p++)
         {
             bool allOutside = true;
@@ -205,7 +227,7 @@ public class PathTracer : PostProcessingEffect
             if (allOutside)
                 return false;
         }
-        
+
         return true;
     }
 
@@ -213,54 +235,54 @@ public class PathTracer : PostProcessingEffect
     {
         var renderers = scene.FindObjectsOfType<MeshRenderer>();
         var triangles = new List<Triangle>();
-        
+
         FrustumPlane[]? frustumPlanes = null;
         float frustumMargin = 0.0f;
         if (_camera != null)
         {
             Matrix4 viewProj = _camera.ViewProjectionMatrix;
             frustumPlanes = ExtractFrustumPlanes(viewProj);
-            
+
             if (_settings.EnableReflections)
             {
                 float farDist = _camera.FarPlane;
                 float fov = _camera.FOV;
                 float tanHalfFov = MathF.Tan(fov * 0.5f);
-                
+
                 float farHeight = tanHalfFov * farDist;
                 float farWidth = farHeight * _camera.AspectRatio;
                 float farDiagonal = MathF.Sqrt(farWidth * farWidth + farHeight * farHeight);
-                
+
                 frustumMargin = farDiagonal * 0.5f;
             }
         }
-        
+
         foreach (var renderer in renderers)
         {
             if (renderer.Mesh == null || renderer.Transform == null)
                 continue;
-                
+
             var mesh = renderer.Mesh;
             var transform = renderer.Transform;
             Matrix4 modelMatrix = transform.WorldMatrix;
-            
+
             float[] vertexData = mesh.GetVertexData();
             uint[]? indexData = mesh.GetIndexData();
             int stride = mesh.GetVertexStride();
-            
+
             Vector3 materialAlbedo = Vector3.One;
             if (renderer.Material != null)
             {
                 var color = renderer.Material.Color;
                 materialAlbedo = new Vector3(color.X, color.Y, color.Z);
             }
-            
+
             if (indexData != null && indexData.Length > 0)
             {
                 for (int i = 0; i < indexData.Length; i += 3)
                 {
                     if (i + 2 >= indexData.Length) break;
-                    
+
                     var tri = ExtractTriangle(vertexData, indexData, i, stride, modelMatrix, materialAlbedo);
                     if (tri.HasValue)
                     {
@@ -288,17 +310,17 @@ public class PathTracer : PostProcessingEffect
                 }
             }
         }
-        
+
         _triangleCount = triangles.Count;
 
         if (_triangleCount == 0)
         {
             return;
         }
-        
+
         var bvh = BuildBVH(triangles);
         _bvhNodeCount = bvh.Count;
-        
+
         UploadGeometry(triangles, bvh);
     }
 
@@ -306,7 +328,7 @@ public class PathTracer : PostProcessingEffect
     {
         Vector3[] positions = new Vector3[3];
         Vector3[] normals = new Vector3[3];
-        
+
         for (int i = 0; i < 3; i++)
         {
             int idx;
@@ -319,14 +341,14 @@ public class PathTracer : PostProcessingEffect
             {
                 idx = (startIndex + i) * stride;
             }
-            
+
             if (idx + 2 >= vertexData.Length) return null;
-            
+
             Vector3 pos = new Vector3(vertexData[idx], vertexData[idx + 1], vertexData[idx + 2]);
             Vector4 pos4 = new Vector4(pos.X, pos.Y, pos.Z, 1.0f);
             Vector4 transformedPos = transform * pos4;
             positions[i] = new Vector3(transformedPos.X, transformedPos.Y, transformedPos.Z);
-            
+
             if (idx + 5 < vertexData.Length)
             {
                 Vector3 normal = new Vector3(vertexData[idx + 3], vertexData[idx + 4], vertexData[idx + 5]);
@@ -339,7 +361,7 @@ public class PathTracer : PostProcessingEffect
                 normals[i] = new Vector3(0, 1, 0);
             }
         }
-        
+
         return new Triangle
         {
             V0 = positions[0],
@@ -363,10 +385,10 @@ public class PathTracer : PostProcessingEffect
     private int BuildBVHRecursive(List<Triangle> triangles, int start, int end, List<BVHNode> nodes, int depth)
     {
         if (start >= end) return -1;
-        
+
         BVHNode node = new BVHNode();
         int nodeIndex = nodes.Count;
-        
+
         if (end - start == 1)
         {
             var tri = triangles[start];
@@ -386,7 +408,7 @@ public class PathTracer : PostProcessingEffect
             nodes.Add(node);
             return nodeIndex;
         }
-        
+
         Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
         Vector3 max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
         for (int i = start; i < end; i++)
@@ -405,11 +427,11 @@ public class PathTracer : PostProcessingEffect
             min = new Vector3(MathF.Min(min.X, triMin.X), MathF.Min(min.Y, triMin.Y), MathF.Min(min.Z, triMin.Z));
             max = new Vector3(MathF.Max(max.X, triMax.X), MathF.Max(max.Y, triMax.Y), MathF.Max(max.Z, triMax.Z));
         }
-        
+
         node.Min = min;
         node.Max = max;
         nodes.Add(node);
-        
+
         int axis = depth % 3;
         float center = 0.0f;
         if (axis == 0)
@@ -418,7 +440,7 @@ public class PathTracer : PostProcessingEffect
             center = (min.Y + max.Y) * 0.5f;
         else
             center = (min.Z + max.Z) * 0.5f;
-        
+
         int mid = start;
         for (int i = start; i < end; i++)
         {
@@ -433,15 +455,15 @@ public class PathTracer : PostProcessingEffect
                 mid++;
             }
         }
-        
+
         if (mid == start || mid == end)
             mid = (start + end) / 2;
-        
+
         node.LeftChild = BuildBVHRecursive(triangles, start, mid, nodes, depth + 1);
         node.RightChild = BuildBVHRecursive(triangles, mid, end, nodes, depth + 1);
-        
+
         nodes[nodeIndex] = node;
-        
+
         return nodeIndex;
     }
 
@@ -450,10 +472,10 @@ public class PathTracer : PostProcessingEffect
         unsafe
         {
             int triangleSize = sizeof(float) * 21;
-            
+
             GL.BindBuffer(BufferTarget.ShaderStorageBuffer, _triangleSSBO);
             GL.BufferData(BufferTarget.ShaderStorageBuffer, triangles.Count * triangleSize, IntPtr.Zero, BufferUsageHint.StaticDraw);
-            
+
             float* triangleData = (float*)GL.MapBuffer(BufferTarget.ShaderStorageBuffer, BufferAccess.WriteOnly);
             for (int i = 0; i < triangles.Count; i++)
             {
@@ -468,11 +490,11 @@ public class PathTracer : PostProcessingEffect
                 triangleData[offset + 18] = tri.Albedo.X; triangleData[offset + 19] = tri.Albedo.Y; triangleData[offset + 20] = tri.Albedo.Z;
             }
             GL.UnmapBuffer(BufferTarget.ShaderStorageBuffer);
-            
+
             int bvhNodeSize = sizeof(float) * 9;
             GL.BindBuffer(BufferTarget.ShaderStorageBuffer, _bvhSSBO);
             GL.BufferData(BufferTarget.ShaderStorageBuffer, bvhNodes.Count * bvhNodeSize, IntPtr.Zero, BufferUsageHint.StaticDraw);
-            
+
             float* bvhData = (float*)GL.MapBuffer(BufferTarget.ShaderStorageBuffer, BufferAccess.WriteOnly);
             for (int i = 0; i < bvhNodes.Count; i++)
             {
@@ -489,7 +511,7 @@ public class PathTracer : PostProcessingEffect
                 bvhData[offset + 8] = (float)node.TriangleIndex;
             }
             GL.UnmapBuffer(BufferTarget.ShaderStorageBuffer);
-            
+
             GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0);
         }
     }
@@ -501,6 +523,15 @@ public class PathTracer : PostProcessingEffect
         GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, _width, _height, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        GL.BindTexture(TextureTarget.Texture2D, 0);
+
+        _prevDepthTexture = (uint)GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, _prevDepthTexture);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.DepthComponent32f, _width, _height, 0, PixelFormat.DepthComponent, PixelType.Float, IntPtr.Zero);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         GL.BindTexture(TextureTarget.Texture2D, 0);
@@ -528,37 +559,37 @@ public class PathTracer : PostProcessingEffect
     private void UpdateBasicDataUBO()
     {
         if (_camera == null) return;
-        
+
         Matrix4 invProj = _camera.ProjectionMatrix.Inverse();
         Matrix4 invView = _camera.ViewMatrix.Inverse();
 
         GL.BindBuffer(BufferTarget.UniformBuffer, _basicDataUBO);
-        
+
         unsafe
         {
             float* data = stackalloc float[16];
-            
+
             data[0] = invProj.M11; data[1] = invProj.M21; data[2] = invProj.M31; data[3] = invProj.M41;
             data[4] = invProj.M12; data[5] = invProj.M22; data[6] = invProj.M32; data[7] = invProj.M42;
             data[8] = invProj.M13; data[9] = invProj.M23; data[10] = invProj.M33; data[11] = invProj.M43;
             data[12] = invProj.M14; data[13] = invProj.M24; data[14] = invProj.M34; data[15] = invProj.M44;
-            
+
             GL.BufferSubData(BufferTarget.UniformBuffer, IntPtr.Zero, sizeof(float) * 16, (IntPtr)data);
-            
+
             data[0] = invView.M11; data[1] = invView.M21; data[2] = invView.M31; data[3] = invView.M41;
             data[4] = invView.M12; data[5] = invView.M22; data[6] = invView.M32; data[7] = invView.M42;
             data[8] = invView.M13; data[9] = invView.M23; data[10] = invView.M33; data[11] = invView.M43;
             data[12] = invView.M14; data[13] = invView.M24; data[14] = invView.M34; data[15] = invView.M44;
-            
+
             GL.BufferSubData(BufferTarget.UniformBuffer, (IntPtr)(sizeof(float) * 16), sizeof(float) * 16, (IntPtr)data);
-            
+
             data[0] = _camera.Position.X;
             data[1] = _camera.Position.Y;
             data[2] = _camera.Position.Z;
             data[3] = 0.0f;
-            
+
             GL.BufferSubData(BufferTarget.UniformBuffer, (IntPtr)(sizeof(float) * 32), sizeof(float) * 4, (IntPtr)data);
-            
+
             if (_directionalLight != null)
             {
                 Vector3 dir = _directionalLight.Direction;
@@ -571,9 +602,9 @@ public class PathTracer : PostProcessingEffect
                 data[1] = dir.Y;
                 data[2] = dir.Z;
                 data[3] = 0.0f;
-                
+
                 GL.BufferSubData(BufferTarget.UniformBuffer, (IntPtr)(sizeof(float) * 36), sizeof(float) * 4, (IntPtr)data);
-                
+
                 Vector3 lightColor = _directionalLight.Color * _directionalLight.Intensity;
                 if (lightColor.X < 0.0001f && lightColor.Y < 0.0001f && lightColor.Z < 0.0001f)
                 {
@@ -591,7 +622,7 @@ public class PathTracer : PostProcessingEffect
                 data[2] = 0.0f;
                 data[3] = 0.0f;
                 GL.BufferSubData(BufferTarget.UniformBuffer, (IntPtr)(sizeof(float) * 36), sizeof(float) * 4, (IntPtr)data);
-                
+
                 data[0] = 1.0f;
                 data[1] = 1.0f;
                 data[2] = 1.0f;
@@ -617,6 +648,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(binding = 0, rgba32f) restrict uniform image2D ImgResult;
 uniform sampler2D DepthTexture;
 uniform sampler2D ColorTexture;
+uniform sampler2D PrevDepthTexture;
 
 layout(std140, binding = 0) uniform BasicDataUBO
 {
@@ -649,6 +681,8 @@ uniform int enableDirectLight;
 uniform int enableShadows;
 uniform int enableReflections;
 uniform int shouldUpdateReflections;
+uniform float reflectionDistanceThreshold;
+uniform int cameraMovedSignificantly;
 
 uint rndSeed;
 
@@ -921,11 +955,12 @@ bool TraceShadowRay(vec3 origin, vec3 direction, float maxDist)
         abs(ray.direction.z) > 0.0001 ? 1.0 / ray.direction.z : (ray.direction.z >= 0.0 ? 1e30 : -1e30)
     );
     
-    int stack[32];
+    int maxStackDepth = 16;
+    int stack[16];
     int stackPtr = 0;
     stack[stackPtr++] = 0;
     
-    while (stackPtr > 0 && stackPtr < 32)
+    while (stackPtr > 0 && stackPtr < maxStackDepth)
     {
         int nodeIndex = stack[--stackPtr];
         if (nodeIndex < 0 || nodeIndex >= bvhNodeCount)
@@ -946,6 +981,9 @@ bool TraceShadowRay(vec3 origin, vec3 direction, float maxDist)
         float tMax = min(aabbResult.tMax, maxDistCheck);
         
         if (tMin > tMax)
+            continue;
+        
+        if (tMin > maxDistCheck)
             continue;
         
         int leftChild = int(bvhNodes[nodeOffset + 6]);
@@ -1072,55 +1110,96 @@ vec3 Radiance(Ray ray, vec3 lightDir, out float directLightAmount)
         
         if (i < rayDepth - 1 && enableReflections != 0 && i == 0)
         {
-            if (shouldUpdateReflections == 0)
+            float distToHit = length(hit.position - basicDataUBO.ViewPos);
+            
+            if (distToHit < 2.0)
             {
                 break;
             }
             
+            float reflectionQuality = 1.0;
+            if (distToHit < reflectionDistanceThreshold)
+            {
+                float distFactor = (distToHit - 2.0) / (reflectionDistanceThreshold - 2.0);
+                distFactor = clamp(distFactor, 0.0, 1.0);
+                reflectionQuality = smoothstep(0.0, 0.6, distFactor);
+            }
+            
+            if (reflectionQuality < 0.25)
+            {
+                break;
+            }
+            
+            if (shouldUpdateReflections == 0 && distToHit < 5.0)
+            {
+                reflectionQuality *= 0.5;
+            }
+            
+            float maxThroughput = max(max(color.x, color.y), color.z);
+            float rrThreshold = 0.15;
+            float rrProbability = min(1.0, maxThroughput / rrThreshold);
+            
+            if (GetRandomFloat01() > rrProbability)
+            {
+                break;
+            }
+            
+            color /= rrProbability;
+            
             vec3 indirectLight = vec3(0.0);
             
-            vec3 rd = CosineSampleHemisphere(normal);
-            float pdf = max(dot(normal, rd), 0.0) / PI;
+            int reflectionSamples = max(1, int(1.0 + reflectionQuality));
+            vec3 accumulatedIndirect = vec3(0.0);
             
-            if (pdf > 1e-7)
+            for (int r = 0; r < reflectionSamples; r++)
             {
-                float NdotRd = max(abs(dot(normal, rd)), 1e-7);
-                vec3 throughput = albedoDemodulated * NdotRd / pdf;
+                vec3 rd = CosineSampleHemisphere(normal);
+                float pdf = max(dot(normal, rd), 0.0) / PI;
                 
-                if (enableDirectLight != 0)
+                if (pdf > 1e-7)
                 {
-                    vec3 nextPosition = position + rd * 0.1;
-                    HitInfo nextHit = TraceRay(Ray(nextPosition, normalize(rd)));
+                    float NdotRd = max(abs(dot(normal, rd)), 1e-7);
+                    vec3 throughput = albedoDemodulated * NdotRd / pdf;
                     
-                    if (nextHit.hit)
+                    if (enableDirectLight != 0)
                     {
-                        vec3 nextNormal = nextHit.normal;
-                        vec3 nextPos = nextHit.position + nextNormal * 0.1;
+                        vec3 nextPosition = position + rd * 0.1;
+                        HitInfo nextHit = TraceRay(Ray(nextPosition, normalize(rd)));
                         
-                        vec3 lightContrib = vec3(0.0);
-                        if (enableShadows != 0)
+                        if (nextHit.hit)
                         {
-                            lightContrib = SampleDirectLight(nextPos, nextNormal, lightDir, basicDataUBO.LightColor);
+                            vec3 nextNormal = nextHit.normal;
+                            vec3 nextPos = nextHit.position + nextNormal * 0.1;
+                            
+                            vec3 lightContrib = vec3(0.0);
+                            if (enableShadows != 0)
+                            {
+                                lightContrib = SampleDirectLight(nextPos, nextNormal, lightDir, basicDataUBO.LightColor);
+                            }
+                            else
+                            {
+                                vec3 nld = normalize(-lightDir);
+                                float NdotL = max(dot(nextNormal, nld), 0.0);
+                                if (NdotL > 0.0)
+                                {
+                                    lightContrib = basicDataUBO.LightColor * NdotL / TWO_OVER_PI;
+                                }
+                            }
+                            
+                            accumulatedIndirect += lightContrib * nextHit.albedo / TWO_OVER_PI;
                         }
                         else
                         {
-                            vec3 nld = normalize(-lightDir);
-                            float NdotL = max(dot(nextNormal, nld), 0.0);
-                            if (NdotL > 0.0)
-                            {
-                                lightContrib = basicDataUBO.LightColor * NdotL / TWO_OVER_PI;
-                            }
+                            accumulatedIndirect += GetSkyColor(rd);
                         }
-                        
-                        indirectLight = lightContrib * nextHit.albedo / TWO_OVER_PI;
-                    }
-                    else
-                    {
-                        indirectLight = GetSkyColor(rd);
                     }
                 }
-                
-                outColor += color * throughput * indirectLight;
+            }
+            
+            if (reflectionSamples > 0)
+            {
+                indirectLight = accumulatedIndirect / float(reflectionSamples);
+                outColor += color * indirectLight * reflectionQuality;
             }
             
             break;
@@ -1155,7 +1234,9 @@ vec3 ACESToneMapping(vec3 color)
     const float C = 2.43;
     const float D = 0.59;
     const float E = 0.14;
-    return clamp((color * (A * color + B)) / (color * (C * color + D) + E), 0.0, 1.0);
+    vec3 result = (color * (A * color + B)) / (color * (C * color + D) + E);
+    result = pow(result, vec3(0.95));
+    return clamp(result, 0.0, 1.0);
 }
 
 void main()
@@ -1170,18 +1251,46 @@ void main()
     
     vec2 uv = (imgCoord + vec2(0.5)) / imgResultSize;
     float depth = texture(DepthTexture, uv).r;
+    float prevDepth = texture(PrevDepthTexture, uv).r;
     vec3 originalColor = texture(ColorTexture, uv).rgb;
+    
+    vec3 lastFrameColor = imageLoad(ImgResult, imgCoord).rgb;
+    
+    bool depthChanged = abs(depth - prevDepth) > 0.0003;
+    vec3 position = ReconstructPosition(uv, depth);
+    vec3 prevPosition = ReconstructPosition(uv, prevDepth);
+    float posChange = length(position - prevPosition);
+    bool positionChanged = posChange > 0.005;
+    
+    bool anyMovement = depthChanged || positionChanged || cameraMovedSignificantly != 0;
+    bool needsFullUpdate = anyMovement || thisRendererFrame < 2;
     
     if (depth >= 1.0 - EPSILON)
     {
-        vec3 lastFrameColor = imageLoad(ImgResult, imgCoord).rgb;
-        float blendFactor = 0.15;
+        float blendFactor = (anyMovement || thisRendererFrame < 3) ? 1.0 : 0.15;
         vec3 finalColor = mix(lastFrameColor, originalColor, blendFactor);
         imageStore(ImgResult, imgCoord, vec4(finalColor, 1.0));
         return;
     }
     
-    vec3 position = ReconstructPosition(uv, depth);
+    float distToSurface = length(position - basicDataUBO.ViewPos);
+    float adaptiveSPPFactor = 1.0;
+    if (!anyMovement)
+    {
+        adaptiveSPPFactor = 1.0;
+    }
+    else if (distToSurface < 1.0)
+    {
+        adaptiveSPPFactor = 0.4;
+    }
+    else if (distToSurface < 2.0)
+    {
+        adaptiveSPPFactor = 0.6;
+    }
+    else if (distToSurface < 4.0)
+    {
+        adaptiveSPPFactor = 0.8;
+    }
     
     Ray primaryRay;
     primaryRay.origin = basicDataUBO.ViewPos;
@@ -1193,11 +1302,13 @@ void main()
     vec3 irradiance = vec3(0.0);
     float avgDirectLight = 0.0;
     
-    bool shouldUpdateReflections = (sceneHash != lastSceneHash) || thisRendererFrame < 2;
-    int totalSPP = actualSPP;
-    if (enableReflections != 0 && !shouldUpdateReflections)
+    bool shouldUpdateReflections = (sceneHash != lastSceneHash) || thisRendererFrame < 2 || !anyMovement;
+    int baseSPP = anyMovement ? actualSPP : actualSPP;
+    int totalSPP = max(1, int(float(baseSPP) * adaptiveSPPFactor));
+    
+    if (distToSurface < 1.0 && enableReflections != 0)
     {
-        totalSPP = max(1, actualSPP / 2);
+        totalSPP = max(1, totalSPP / 2);
     }
     
     for (int i = 0; i < totalSPP; i++)
@@ -1240,7 +1351,7 @@ void main()
         irradiance /= float(totalSPP);
         avgDirectLight /= float(totalSPP);
     }
-    
+
     float shadowDarkness = 1.0 - smoothstep(0.0, 0.15, avgDirectLight);
     shadowDarkness = mix(1.0, 0.0, shadowDarkness);
     irradiance *= shadowDarkness;
@@ -1287,8 +1398,8 @@ void main()
         
         bool isReflection = luminanceVariance > 0.15;
         int radius = isReflection ? 2 : 1;
-        float blendFactor = isReflection ? 0.5 : 0.35;
-        float luminanceWeightScale = isReflection ? 0.5 : 0.8;
+        float blendFactor = anyMovement ? 0.4 : (isReflection ? 0.6 : 0.5);
+        float luminanceWeightScale = isReflection ? 0.5 : 0.7;
         
         float kernel[3] = float[3](1.0, 0.666, 0.333);
         
@@ -1340,11 +1451,10 @@ void main()
         }
     }
     
-    vec3 lastFrameColor = imageLoad(ImgResult, imgCoord).rgb;
     bool geometryChanged = (sceneHash != lastSceneHash);
     
     vec3 finalColor;
-    if (length(lastFrameColor) < 0.001 || geometryChanged || thisRendererFrame < 1)
+    if (length(lastFrameColor) < 0.001 || geometryChanged || anyMovement || thisRendererFrame < 2)
     {
         finalColor = denoisedIrradiance;
     }
@@ -1354,32 +1464,39 @@ void main()
         float luminanceDiff = dot(colorDiff, vec3(0.299, 0.587, 0.114));
         
         float adaptiveWeight;
-        if (luminanceDiff > 0.08)
+        if (luminanceDiff > 0.25)
         {
-            adaptiveWeight = 1.0;
+            adaptiveWeight = 0.6;
+        }
+        else if (luminanceDiff > 0.15)
+        {
+            adaptiveWeight = 0.4;
         }
         else
         {
             float frameWeight = 1.0 / float(thisRendererFrame + 1);
-            adaptiveWeight = min(frameWeight * 2.0, 0.25);
+            adaptiveWeight = min(frameWeight * 3.0, 0.35);
         }
         
         finalColor = mix(lastFrameColor, denoisedIrradiance, adaptiveWeight);
     }
     
+    finalColor *= 1.2;
+    
     finalColor = ACESToneMapping(finalColor);
     finalColor = pow(finalColor, vec3(1.0 / 2.2));
+    finalColor *= 1.1;
     
     imageStore(ImgResult, imgCoord, vec4(finalColor, 1.0));
 }
 ";
-        
+
         _computeShader = new Shader(computeShaderSource);
     }
-    
+
     public void ResetRenderer()
     {
-        _frameCount = 0;
+        _needsFullReset = true;
     }
 
     public override void Apply(uint sourceTexture, uint targetFramebuffer, int width, int height)
@@ -1398,7 +1515,7 @@ void main()
         }
 
         UpdateBasicDataUBO();
-        
+
         _computeShader.Use();
         _computeShader.SetInt("rayDepth", _settings.RayDepth);
         _computeShader.SetInt("SPP", _settings.SamplesPerPixel);
@@ -1411,19 +1528,25 @@ void main()
         _computeShader.SetInt("enableDirectLight", _settings.EnableDirectLight ? 1 : 0);
         _computeShader.SetInt("enableShadows", _settings.EnableShadows ? 1 : 0);
         _computeShader.SetInt("enableReflections", _settings.EnableReflections ? 1 : 0);
-        
-        bool shouldUpdateReflections = (_sceneHash != _lastSceneHash) || _frameCount < 2;
+
+        bool shouldUpdateReflections = (_sceneHash != _lastSceneHash) || _frameCount < 2 || _needsFullReset;
         _computeShader.SetInt("shouldUpdateReflections", shouldUpdateReflections ? 1 : 0);
-        
+
+        float reflectionDistanceThreshold = 5.0f;
+        _computeShader.SetFloat("reflectionDistanceThreshold", reflectionDistanceThreshold);
+
+        _computeShader.SetInt("cameraMovedSignificantly", _cameraMovedSignificantly ? 1 : 0);
+        _cameraMovedSignificantly = false;
+
         GL.BindBufferBase(BufferRangeTarget.UniformBuffer, 0, _basicDataUBO);
-        
+
         if (_triangleSSBO != 0)
             GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 1, _triangleSSBO);
         if (_bvhSSBO != 0)
             GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 2, _bvhSSBO);
-        
+
         GL.BindImageTexture(0, _resultTexture, 0, false, 0, TextureAccess.ReadWrite, (SizedInternalFormat)PixelInternalFormat.Rgba32f);
-        
+
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, _depthTexture);
         int depthLocation = _computeShader.GetUniformLocation("DepthTexture");
@@ -1439,14 +1562,39 @@ void main()
         {
             GL.Uniform1(colorLocation, 1);
         }
-        
+
+        GL.ActiveTexture(TextureUnit.Texture2);
+        GL.BindTexture(TextureTarget.Texture2D, _prevDepthTexture);
+        int prevDepthLocation = _computeShader.GetUniformLocation("PrevDepthTexture");
+        if (prevDepthLocation >= 0)
+        {
+            GL.Uniform1(prevDepthLocation, 2);
+        }
+
         int groupsX = (_width + LOCAL_SIZE_X - 1) / LOCAL_SIZE_X;
         int groupsY = (_height + LOCAL_SIZE_Y - 1) / LOCAL_SIZE_Y;
         GL.DispatchCompute(groupsX, groupsY, 1);
 
         GL.MemoryBarrier(MemoryBarrierFlags.TextureFetchBarrierBit);
 
+        uint tempFBORead = (uint)GL.GenFramebuffer();
+        uint tempFBODraw = (uint)GL.GenFramebuffer();
+
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, tempFBORead);
+        GL.FramebufferTexture2D(FramebufferTarget.ReadFramebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, _depthTexture, 0);
+
+        GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, tempFBODraw);
+        GL.FramebufferTexture2D(FramebufferTarget.DrawFramebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, _prevDepthTexture, 0);
+
+        GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
+
+        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, 0);
+        GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+        GL.DeleteFramebuffer(tempFBORead);
+        GL.DeleteFramebuffer(tempFBODraw);
+
         _frameCount++;
+        _needsFullReset = false;
     }
 
     public void Resize(int width, int height)
@@ -1460,8 +1608,12 @@ void main()
         GL.BindTexture(TextureTarget.Texture2D, _resultTexture);
         GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, _width, _height, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
         GL.BindTexture(TextureTarget.Texture2D, 0);
-        
-        _frameCount = 0;
+
+        GL.BindTexture(TextureTarget.Texture2D, _prevDepthTexture);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.DepthComponent32f, _width, _height, 0, PixelFormat.DepthComponent, PixelType.Float, IntPtr.Zero);
+        GL.BindTexture(TextureTarget.Texture2D, 0);
+
+        _needsFullReset = true;
     }
 
 
@@ -1470,6 +1622,7 @@ void main()
         if (disposing)
         {
             GL.DeleteTexture(_resultTexture);
+            GL.DeleteTexture(_prevDepthTexture);
             GL.DeleteBuffer(_basicDataUBO);
             GL.DeleteBuffer(_triangleSSBO);
             GL.DeleteBuffer(_bvhSSBO);
@@ -1493,3 +1646,4 @@ void main()
         public int TriangleIndex;
     }
 }
+
