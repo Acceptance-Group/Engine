@@ -636,6 +636,17 @@ public class PathTracer : PostProcessingEffect
 
     private void CreateShader()
     {
+        int major = GL.GetInteger(GetPName.MajorVersion);
+        int minor = GL.GetInteger(GetPName.MinorVersion);
+        int glVersion = major * 100 + minor * 10;
+        if (glVersion < 430)
+        {
+            Logger.Warning($"Compute shaders not supported (GL {major}.{minor}). Disabling PathTracer.");
+            _computeShader = null;
+            _settings.Enabled = false;
+            return;
+        }
+
         string computeShaderSource = @"
 #version 450 core
 #define EPSILON 0.0001

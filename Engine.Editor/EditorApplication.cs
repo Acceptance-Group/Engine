@@ -148,6 +148,17 @@ public class EditorApplication : IDisposable
         _vignette = new Vignette(1920, 1080, _postProcessingSettings);
         _ssao = new SSAO(1920, 1080, _postProcessingSettings);
         _pathTracer = new PathTracer(1920, 1080, _pathTracingSettings);
+
+        string? exts = GL.GetString(StringName.Extensions);
+        bool hasNvRay = exts != null && exts.Contains("GL_NV_ray_tracing");
+        if (hasNvRay)
+        {
+            Logger.Debug("NV ray tracing extension is supported.");
+        }
+        else
+        {
+            Logger.Debug("NV ray tracing extension is not supported. Path tracing performance may be limited.");
+        }
     }
 
     private void CreateDefaultShader()
