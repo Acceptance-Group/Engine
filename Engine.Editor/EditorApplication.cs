@@ -56,7 +56,7 @@ public class EditorApplication : IDisposable
     private bool _vSyncEnabled = true;
     private enum PlayMode { Stopped, Playing, Paused }
     private PlayMode _playMode = PlayMode.Stopped;
-    
+
     public enum RenderingPipelineType { Default, PathTraced }
     private RenderingPipelineType _renderingPipeline = RenderingPipelineType.Default;
     private Dictionary<GameObject, (Engine.Math.Vector3 position, Engine.Math.Quaternion rotation)> _originalTransforms = new Dictionary<GameObject, (Engine.Math.Vector3, Engine.Math.Quaternion)>();
@@ -66,6 +66,7 @@ public class EditorApplication : IDisposable
         var nativeWindowSettings = NativeWindowSettings.Default;
         nativeWindowSettings.ClientSize = new OpenTK.Mathematics.Vector2i(1920, 1080);
         nativeWindowSettings.Title = "Engine";
+        nativeWindowSettings.APIVersion = new Version(4, 6);
         nativeWindowSettings.WindowState = WindowState.Maximized;
 
         _window = new GameWindow(GameWindowSettings.Default, nativeWindowSettings);
@@ -85,7 +86,7 @@ public class EditorApplication : IDisposable
         _viewport = new ViewportWindow(this);
         _settings = new SettingsWindow(this);
         _materialEditor = new MaterialEditorWindow(this);
-        
+
         _shadowSettings = new ShadowSettings();
         _directionalLight = new DirectionalLight();
         _antiAliasingSettings = new AntiAliasingSettings();
@@ -125,12 +126,12 @@ public class EditorApplication : IDisposable
 
         CreateDefaultShader();
         CreateDefaultScene();
-        
+
         _skybox = new Skybox();
         _camera.LookAt(new Engine.Math.Vector3(0, 0, 0), Engine.Math.Vector3.Up);
-        
+
         _shadowRenderer = new ShadowRenderer(_shadowSettings);
-        
+
         if (_currentScene != null)
         {
             _physicsWorld = _currentScene.PhysicsWorld as PhysicsWorld;
@@ -140,7 +141,7 @@ public class EditorApplication : IDisposable
                 _currentScene.PhysicsWorld = _physicsWorld;
             }
         }
-        
+
         _fxaa = new FXAA(1920, 1080);
         _smaa = new SMAA(1920, 1080);
         _motionBlur = new MotionBlur(1920, 1080, _postProcessingSettings);
@@ -149,15 +150,14 @@ public class EditorApplication : IDisposable
         _ssao = new SSAO(1920, 1080, _postProcessingSettings);
         _pathTracer = new PathTracer(1920, 1080, _pathTracingSettings);
 
-        string? exts = GL.GetString(StringName.Extensions);
-        bool hasNvRay = exts != null && exts.Contains("GL_NV_ray_tracing");
-        if (hasNvRay)
+        GL.GetInteger(GetPName.NumExtensions, out int count);
+
+        Console.WriteLine($"Найдено расширений: {count}");
+
+        for (int i = 0; i < count; i++)
         {
-            Logger.Debug("NV ray tracing extension is supported.");
-        }
-        else
-        {
-            Logger.Debug("NV ray tracing extension is not supported. Path tracing performance may be limited.");
+            string extension = GL.GetString(StringNameIndexed.Extensions, i);
+            Console.WriteLine($"{i}: {extension}");
         }
     }
 
@@ -717,11 +717,11 @@ void main()
             meshRenderer.Mesh = Primitives.CreateCube();
             meshRenderer.SetDefaultShader(_defaultShader!);
             cube.Transform.Position = new Engine.Math.Vector3(-3 + i * 2, 0.5f + i * 1.1f, 0);
-            
+
             var cubePhysics = cube.AddComponent<Rigidbody>();
             cubePhysics.Mass = 1.0f;
             cubePhysics.IsKinematic = false;
-            
+
             var cubeCollider = cube.AddComponent<BoxCollider>();
             cubeCollider.Size = new Engine.Math.Vector3(1.0f, 1.0f, 1.0f);
         }
@@ -733,11 +733,11 @@ void main()
             sphereRenderer.Mesh = Primitives.CreateSphere();
             sphereRenderer.SetDefaultShader(_defaultShader!);
             sphere.Transform.Position = new Engine.Math.Vector3(-4 + i * 1.5f, 5 + i * 0.5f, -2 + i * 0.3f);
-            
+
             var spherePhysics = sphere.AddComponent<Rigidbody>();
             spherePhysics.Mass = 0.5f + i * 0.2f;
             spherePhysics.IsKinematic = false;
-            
+
             var sphereCollider = sphere.AddComponent<SphereCollider>();
             sphereCollider.Radius = 0.5f;
         }
@@ -750,11 +750,11 @@ void main()
             meshRenderer.SetDefaultShader(_defaultShader!);
             heavyCube.Transform.Position = new Engine.Math.Vector3(4, 2 + i * 1.2f, -1);
             heavyCube.Transform.Scale = new Engine.Math.Vector3(1.2f, 1.2f, 1.2f);
-            
+
             var heavyPhysics = heavyCube.AddComponent<Rigidbody>();
             heavyPhysics.Mass = 5.0f;
             heavyPhysics.IsKinematic = false;
-            
+
             var heavyCollider = heavyCube.AddComponent<BoxCollider>();
             heavyCollider.Size = new Engine.Math.Vector3(1.2f, 1.2f, 1.2f);
         }
@@ -776,7 +776,7 @@ void main()
         var groundPhysics = ground.AddComponent<Rigidbody>();
         groundPhysics.IsKinematic = true;
         groundPhysics.Mass = 0;
-        
+
         var groundCollider = ground.AddComponent<BoxCollider>();
         groundCollider.Size = new Engine.Math.Vector3(20, 1, 20);
     }
@@ -804,11 +804,11 @@ void main()
                 _physicsWorld.Update((float)e.Time);
             }
 
-        if (_currentScene != null)
-        {
-            foreach (var gameObject in _currentScene.GameObjects)
+            if (_currentScene != null)
             {
-                gameObject.Update((float)e.Time);
+                foreach (var gameObject in _currentScene.GameObjects)
+                {
+                    gameObject.Update((float)e.Time);
                 }
             }
         }
@@ -830,7 +830,7 @@ void main()
         {
             GL.Viewport(0, 0, _window.Size.X, _window.Size.Y);
         }
-        
+
         GL.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
@@ -845,7 +845,7 @@ void main()
         _profiler.Render();
         _settings.Render();
         _materialEditor.Render();
-        
+
         if (_fileBrowser != null && _fileBrowser.Show())
         {
             OnModelFileSelected();
@@ -883,7 +883,7 @@ void main()
         if (ImGui.Begin("DockSpace", windowFlags))
         {
             ImGui.PopStyleVar(3);
-            
+
             var dockSpaceId = ImGui.GetID("DockSpace");
             ImGui.DockSpace(dockSpaceId, System.Numerics.Vector2.Zero);
         }
@@ -1098,7 +1098,7 @@ void main()
                 var renderer = gameObject.AddComponent<MeshRenderer>();
                 renderer.Mesh = mesh;
                 renderer.SetDefaultShader(_defaultShader!);
-                
+
                 Logger.Info($"Successfully loaded model: {fileName}");
             }
             else
@@ -1193,13 +1193,13 @@ void main()
         get => _showPhysicsDebug;
         set => _showPhysicsDebug = value;
     }
-    
+
     public bool IsPhysicsSimulating
     {
         get => _isPhysicsSimulating;
         set => _isPhysicsSimulating = value;
     }
-    
+
     private void OnPlay()
     {
         if (_playMode == PlayMode.Playing)
@@ -1258,7 +1258,7 @@ void main()
     private void StoreOriginalTransforms()
     {
         _originalTransforms.Clear();
-        
+
         if (_currentScene == null)
             return;
 
@@ -1308,12 +1308,12 @@ void main()
             component.SyncWithTransform();
         }
     }
-    
+
     public void ResetPhysics()
     {
         if (_currentScene == null)
             return;
-            
+
         foreach (var gameObject in _currentScene.GameObjects)
         {
             var physics = gameObject.GetComponent<Rigidbody>();
@@ -1334,7 +1334,7 @@ void main()
             }
         }
     }
-    
+
     internal GameWindow? Window => _window;
 
     public bool VSyncEnabled

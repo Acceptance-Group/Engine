@@ -636,17 +636,6 @@ public class PathTracer : PostProcessingEffect
 
     private void CreateShader()
     {
-        int major = GL.GetInteger(GetPName.MajorVersion);
-        int minor = GL.GetInteger(GetPName.MinorVersion);
-        int glVersion = major * 100 + minor * 10;
-        if (glVersion < 430)
-        {
-            Logger.Warning($"Compute shaders not supported (GL {major}.{minor}). Disabling PathTracer.");
-            _computeShader = null;
-            _settings.Enabled = false;
-            return;
-        }
-
         string computeShaderSource = @"
 #version 450 core
 #define EPSILON 0.0001
@@ -1364,7 +1353,7 @@ void main()
     }
 
     float shadowDarkness = 1.0 - smoothstep(0.0, 0.15, avgDirectLight);
-    shadowDarkness = mix(1.0, 0.0, shadowDarkness);
+    shadowDarkness = mix(2.0, 0.0, shadowDarkness);
     irradiance *= shadowDarkness;
     
     vec3 denoisedIrradiance = irradiance;
